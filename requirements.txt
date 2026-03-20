@@ -10,4 +10,4 @@ send2trash==1.8.3
 rapidfuzz==3.9.3
 
 # Empaquetado
-pyinstaller==6.5.0
+pyinstaller
