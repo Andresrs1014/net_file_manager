@@ -1,3 +1,4 @@
+from importlib.resources import path
 import os
 import tkinter as tk
 from tkinter import ttk
@@ -150,8 +151,13 @@ class FilePanel(tk.Frame):
 
     # ── Navegación ──────────────────────────────────────
     def navigate(self, path: str):
-        if not path or not os.path.isdir(path):
-            self._status.set(f"⚠ Ruta no válida: {path}")
+    # Normalizar ruta UNC y eliminar espacios
+        path = path.strip().replace("/", "\\")
+        if not path:
+            return
+        # os.path.isdir falla con UNC sin trailing, forzamos con os.path.exists
+        if not os.path.exists(path) or not os.path.isdir(path):
+            self._status.set(f"⚠ Ruta no válida o inaccesible: {path}")
             return
         self._current = path
         self._path_var.set(path)

@@ -18,27 +18,29 @@ class Indexer:
         self.cache      = CacheManager()
         self._observers = []
         self._running   = False
+        self._lock      = threading.Lock()
         self._initialized = True
 
     def subscribe(self, callback):
-        self._observers.append(callback)
+        if callback not in self._observers:
+            self._observers.append(callback)
 
     def _notify(self, event: str, data=None):
         for cb in self._observers:
             cb(event, data)
 
     def start_scan(self, root_path: str):
-        if self._running:
-            return
-        thread = threading.Thread(
-            target=self._scan, args=(root_path,), daemon=True
-        )
+        with self._lock:
+            if self._running:
+                return
+            self._running = True
+        thread = threading.Thread(target=self._scan, args=(root_path,), daemon=True)
         thread.start()
 
     def _scan(self, root_path: str):
-        self._running = True
         self._notify("scan_start", root_path)
         try:
+            self.cache.clear_path(root_path)
             entries = []
             for dirpath, dirnames, filenames in os.walk(root_path):
                 for name in dirnames:
@@ -57,7 +59,8 @@ class Indexer:
         except Exception as e:
             self._notify("scan_error", str(e))
         finally:
-            self._running = False
+            with self._lock:
+                self._running = False
 
     def _mtime(self, path):
         try:    return os.path.getmtime(path)

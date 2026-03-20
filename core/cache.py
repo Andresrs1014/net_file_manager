@@ -1,7 +1,38 @@
+import os
 import sqlite3
 from pathlib import Path
 
-DB_PATH = Path.home() / ".netvault_cache.db"
+
+def _candidate_db_paths() -> list[Path | None]:
+    candidates: list[Path | None] = []
+    local_appdata = os.getenv("LOCALAPPDATA")
+    if local_appdata:
+        candidates.append(Path(local_appdata) / "NetVault" / "cache.db")
+    candidates.append(Path.home() / ".netvault" / "cache.db")
+    candidates.append(Path.cwd() / ".netvault" / "cache.db")
+    candidates.append(None)
+    return candidates
+
+
+def _connect_writable() -> tuple[sqlite3.Connection, str]:
+    last_error = None
+    for db_path in _candidate_db_paths():
+        try:
+            if db_path is None:
+                conn = sqlite3.connect(":memory:", check_same_thread=False)
+                return conn, ":memory:"
+            db_path.parent.mkdir(parents=True, exist_ok=True)
+            conn = sqlite3.connect(str(db_path), check_same_thread=False)
+            conn.execute("CREATE TABLE IF NOT EXISTS __write_test (id INTEGER PRIMARY KEY)")
+            conn.execute("DROP TABLE __write_test")
+            conn.commit()
+            return conn, str(db_path)
+        except Exception as exc:
+            last_error = exc
+    raise sqlite3.OperationalError(f"unable to open writable database file: {last_error}")
+
+
+DB_PATH = _candidate_db_paths()[0]
 
 class CacheManager:
     _instance = None
@@ -15,11 +46,12 @@ class CacheManager:
     def __init__(self):
         if self._initialized:
             return
-        self.conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
+        self.conn, self.db_path = _connect_writable()
         self._create_table()
         self._initialized = True
 
     def _create_table(self):
+        self.conn.execute("PRAGMA journal_mode=WAL;")
         self.conn.execute("""
             CREATE TABLE IF NOT EXISTS files (
                 id    INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -43,11 +75,12 @@ class CacheManager:
 
     def search(self, keyword: str, ext_filter: str = "", limit: int = 500):
         query = "SELECT path, name, type, size, mtime FROM files WHERE name LIKE ?"
-        params = [f"%{keyword}%"]
+        params: list[object] = [f"%{keyword}%"]
         if ext_filter:
             query += " AND type = ?"
             params.append(ext_filter)
-        query += f" LIMIT {limit}"
+        query += " ORDER BY name COLLATE NOCASE LIMIT ?"
+        params.append(max(1, int(limit)))
         return self.conn.execute(query, params).fetchall()
 
     def clear_path(self, root_path: str):

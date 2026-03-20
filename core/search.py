@@ -6,18 +6,19 @@ class ExactSearch:
         self.cache = CacheManager()
 
     def search(self, keyword, ext_filter=None, limit=500):
-        return self.cache.search(keyword, str(ext_filter), limit)
+        return self.cache.search(keyword, ext_filter or "", limit)
 
 class FuzzySearch:
     def __init__(self):
         self.cache = CacheManager()
 
     def search(self, keyword, ext_filter=None, limit=500, threshold=60):
-        all_results = self.cache.search("", str(ext_filter), limit=5000)
+        all_results = self.cache.search("", ext_filter or "", limit=5000)
         names   = [r[1] for r in all_results]
         matches = process.extract(keyword, names, scorer=fuzz.WRatio, limit=limit)
-        matched = {m[0] for m in matches if m[1] >= threshold}
-        return [r for r in all_results if r[1] in matched]
+        matched_names = {match[0] for match in matches if match[1] >= threshold}
+        results = [row for row in all_results if row[1] in matched_names]
+        return results[:limit]
 
 class SearchEngine:
     def __init__(self):

@@ -110,7 +110,7 @@ class MainWindow(tk.Tk):
                  ).pack(side="left", padx=(8, 2))
 
         self._search_var = tk.StringVar()
-        tk.Entry(
+        search_entry = tk.Entry(
             bar, textvariable=self._search_var,
             bg=t["bg_secondary"], fg=t["text_primary"],
             insertbackground=t["accent"],
@@ -118,9 +118,9 @@ class MainWindow(tk.Tk):
             highlightthickness=1,
             highlightbackground=t["border"],
             highlightcolor=t["accent"]
-        ).pack(side="left", fill="x", expand=True, ipady=5, pady=6)
-
-        self._search_var.trace_add("write", lambda *_: self._on_search())
+        )
+        search_entry.pack(side="left", fill="x", expand=True, ipady=5, pady=6)
+        search_entry.bind("<KeyRelease>", lambda e: self._on_search())
 
         tk.Label(bar, text="Ext:", bg=t["bg_primary"],
                  fg=t["text_secondary"], font=("Segoe UI", 9)
@@ -247,9 +247,11 @@ class MainWindow(tk.Tk):
     def _toggle_theme(self):
         new = self.app_ctrl.toggle_theme()
         self._toggle_lbl.set("🌙  Dark" if new == "dark" else "☀  Light")
-        self._global_status.set(
-            "  Tema cambiado. Reinicia la app para aplicarlo completamente."
-        )
+        # Reiniciar la ventana completa para aplicar el tema
+        self.destroy()
+        from ui.main_window import MainWindow
+        new_win = MainWindow(self.app_ctrl)
+        new_win.run()
 
     # ── Indexer events ──────────────────────────────────
     def _subscribe_events(self):
