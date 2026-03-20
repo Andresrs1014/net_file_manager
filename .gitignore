@@ -25,6 +25,33 @@ MANIFEST
 # PyInstaller
 *.manifest
 *.spec
+*.exe
+*.dll
+*.pyd
+*.log
+output/
+pyinstaller.log
+__pycache__/
+build/
+dist/
+*.tmp
+*.bak
+*.pkg
+*.pyz
+*.pyz.zip
+*.toc
+*.pkg
+*.bin
+*.dat
+*.pyc
+*.pyo
+*.pyd
+*.so
+*.id
+*.lib
+*.exp
+*.manifest
+*.spec
 
 # Installer logs
 pip-log.txt
@@ -63,3 +90,7 @@ venv.bak/
 # OS generated files
 .DS_Store
 Thumbs.db
+
+# Pyinstaller 
+dist
+build
