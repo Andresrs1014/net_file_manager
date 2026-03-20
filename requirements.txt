@@ -1,0 +1,13 @@
+# UI
+ttkbootstrap==1.10.1
+tkinterdnd2==0.3.0
+Pillow
+
+# Operaciones de archivos
+send2trash==1.8.3
+
+# Búsqueda
+rapidfuzz==3.9.3
+
+# Empaquetado
+pyinstaller==6.5.0
