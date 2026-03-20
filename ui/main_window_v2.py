@@ -16,9 +16,11 @@ class MainWindow(tk.Tk):
         self.t = get_theme(app_ctrl.get_theme())
 
         self.title("NetVault - Gestor de Archivos de Red")
-        self.geometry("1300x780")
-        self.minsize(900, 600)
+        self.geometry("1380x820")
+        self.minsize(980, 620)
         self.configure(bg=self.t["bg_primary"])
+
+        self._terminal_visible = False
 
         self._build_toolbar()
         self._build_searchbar()
@@ -48,8 +50,8 @@ class MainWindow(tk.Tk):
             self,
             self.app_ctrl,
             on_search=lambda _keyword, _results: None,
-            left=self._left if hasattr(self, "_left") else None,
-            global_status=getattr(self, "_global_status", None),
+            left=None,
+            global_status=None,
         )
         self._searchbar.pack(fill="x", padx=6, pady=(4, 0))
 
@@ -108,17 +110,15 @@ class MainWindow(tk.Tk):
             command=self._remove_fav,
         ).pack(fill="x", padx=6, pady=(0, 8))
 
-        paned = ttk.PanedWindow(content, orient="horizontal")
-        paned.pack(side="left", fill="both", expand=True)
-        self._paned = paned
+        self._paned = ttk.PanedWindow(content, orient="horizontal")
+        self._paned.pack(side="left", fill="both", expand=True)
 
-        self._left = FilePanel(paned, self.app_ctrl, side_label="Panel Izquierdo")
-        self._right = FilePanel(paned, self.app_ctrl, side_label="Panel Derecho")
-        self._terminal = TerminalPanel(paned, self.app_ctrl)
-        self._terminal_visible = False
+        self._left = FilePanel(self._paned, self.app_ctrl, side_label="Panel Izquierdo")
+        self._right = FilePanel(self._paned, self.app_ctrl, side_label="Panel Derecho")
+        self._terminal = TerminalPanel(self._paned, self.app_ctrl)
 
-        paned.add(self._left, weight=1)
-        paned.add(self._right, weight=1)
+        self._paned.add(self._left, weight=1)
+        self._paned.add(self._right, weight=1)
         self._load_favorites()
 
     def _build_statusbar(self):
@@ -135,16 +135,15 @@ class MainWindow(tk.Tk):
         ).pack(fill="x", side="bottom")
 
     def _wire_toolbar(self):
-        if hasattr(self, "_searchbar"):
-            self._searchbar._left = self._left
-            self._searchbar._global_status = self._global_status
+        self._searchbar._left = self._left
+        self._searchbar._global_status = self._global_status
 
         self._toolbar.wire(
             {
-                "AtrÃ¡s": self._left.go_back,
+                "Atrás": self._left.go_back,
                 "Adelante": self._left.go_forward,
                 "Subir": self._left.go_up,
-                "Reindexar": lambda: self.app_ctrl.start_index(self._left._current),
+                "Reindexar": lambda: self.app_ctrl.start_index(self._left._current, force=True),
                 "Nueva carpeta": self._left._new_folder,
                 "Nuevo archivo": self._left._new_file,
                 "Cortar": self._left._cut_selected,
@@ -155,12 +154,35 @@ class MainWindow(tk.Tk):
             }
         )
 
+    def _toggle_terminal(self):
+        if self._terminal_visible:
+            try:
+                self._paned.forget(self._terminal)
+            except tk.TclError:
+                pass
+            self._paned.add(self._right, weight=1)
+            self._terminal_visible = False
+            self._global_status.set("  Panel derecho restaurado.")
+            return
+
+        try:
+            self._paned.forget(self._right)
+        except tk.TclError:
+            pass
+        self._paned.add(self._terminal, weight=1)
+        self._terminal_visible = True
+        self._terminal.set_cwd(self._left._current or os.path.expanduser("~"))
+        self._terminal.focus_terminal()
+        self._global_status.set("  Terminal abierta en el costado derecho.")
+
     def _subscribe_events(self):
         def on_event(event, data):
             if event == "scan_start":
                 self.after(0, lambda: self._global_status.set(f"  Indexando: {data}"))
             elif event == "scan_done":
                 self.after(0, lambda: self._global_status.set(f"  Indice actualizado: {data}"))
+            elif event == "scan_skip":
+                self.after(0, lambda: self._global_status.set(f"  Indice reutilizado para: {data}"))
             elif event == "scan_error":
                 self.after(0, lambda: self._global_status.set(f"  Error de indice: {data}"))
 

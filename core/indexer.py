@@ -1,5 +1,6 @@
 import os
 import threading
+import time
 from pathlib import Path
 from core.cache import CacheManager
 
@@ -19,6 +20,7 @@ class Indexer:
         self._observers = []
         self._running   = False
         self._lock      = threading.Lock()
+        self._last_scan_by_path = {}
         self._initialized = True
 
     def subscribe(self, callback):
@@ -29,12 +31,17 @@ class Indexer:
         for cb in self._observers:
             cb(event, data)
 
-    def start_scan(self, root_path: str):
+    def start_scan(self, root_path: str, force: bool = False):
+        normalized_path = os.path.normpath(root_path)
         with self._lock:
             if self._running:
                 return
+            if not force and not self._should_scan(normalized_path):
+                self._notify("scan_skip", normalized_path)
+                return
             self._running = True
-        thread = threading.Thread(target=self._scan, args=(root_path,), daemon=True)
+        self._last_scan_by_path[normalized_path] = time.time()
+        thread = threading.Thread(target=self._scan, args=(normalized_path,), daemon=True)
         thread.start()
 
     def _scan(self, root_path: str):
@@ -61,6 +68,13 @@ class Indexer:
         finally:
             with self._lock:
                 self._running = False
+
+    def _should_scan(self, root_path: str) -> bool:
+        cooldown = 120 if root_path.startswith("\\\\") else 20
+        last_scan = self._last_scan_by_path.get(root_path)
+        if last_scan is None:
+            return True
+        return (time.time() - last_scan) >= cooldown
 
     def _mtime(self, path):
         try:    return os.path.getmtime(path)

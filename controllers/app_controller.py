@@ -31,8 +31,8 @@ class AppController:
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump(self.config, f, indent=2, ensure_ascii=False)
 
-    def start_index(self, path: str):
-        self.indexer.start_scan(path)
+    def start_index(self, path: str, force: bool = False):
+        self.indexer.start_scan(path, force=force)
 
     def subscribe_indexer(self, callback):
         self.indexer.subscribe(callback)

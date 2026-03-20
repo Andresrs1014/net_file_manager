@@ -12,6 +12,7 @@ class SearchBar(tk.Frame):
         self.on_search = on_search
         self._left = left
         self._global_status = global_status
+        self._search_job = None
         self._build()
 
     def _build(self):
@@ -39,7 +40,7 @@ class SearchBar(tk.Frame):
             highlightcolor=t["accent"],
         )
         self._entry.pack(side="left", fill="x", expand=True, ipady=5, pady=6)
-        self._entry.bind("<KeyRelease>", lambda _event: self._run_search(update_left=True))
+        self._entry.bind("<KeyRelease>", lambda _event: self._schedule_search())
 
         tk.Label(
             self,
@@ -60,14 +61,14 @@ class SearchBar(tk.Frame):
             width=7,
             insertbackground=t["accent"],
         ).pack(side="left", padx=(0, 8))
-        self._ext_var.trace_add("write", lambda *_: self._run_search(update_left=True))
+        self._ext_var.trace_add("write", lambda *_: self._schedule_search())
 
         self._fuzzy_var = tk.BooleanVar(value=False)
         tk.Checkbutton(
             self,
             text="Fuzzy",
             variable=self._fuzzy_var,
-            command=lambda: self._run_search(update_left=True),
+            command=self._run_search_immediately,
             bg=t["bg_primary"],
             fg=t["text_secondary"],
             selectcolor=t["bg_secondary"],
@@ -95,6 +96,17 @@ class SearchBar(tk.Frame):
         if not ext:
             return None
         return ext if ext.startswith(".") else f".{ext}"
+
+    def _schedule_search(self):
+        if self._search_job is not None:
+            self.after_cancel(self._search_job)
+        self._search_job = self.after(220, self._run_search_immediately)
+
+    def _run_search_immediately(self):
+        if self._search_job is not None:
+            self.after_cancel(self._search_job)
+            self._search_job = None
+        self._run_search(update_left=True)
 
     def _run_search(self, update_left=False):
         keyword = self._search_var.get()
@@ -124,7 +136,7 @@ class SearchBar(tk.Frame):
         self._search_var.set("")
         self._ext_var.set("")
         self._fuzzy_var.set(False)
-        self._run_search(update_left=True)
+        self._run_search_immediately()
 
     def get_keyword(self):
         return self._search_var.get()
