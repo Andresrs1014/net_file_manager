@@ -21,6 +21,7 @@ class MainWindow(tk.Tk):
         self._set_initial_window_size()
 
         self._terminal_visible = False
+        self._active_panel = None  # panel que tiene el foco activo
 
         self._build_toolbar()
         self._build_searchbar()
@@ -34,7 +35,16 @@ class MainWindow(tk.Tk):
         self._left.navigate(left_initial)
         self._right.navigate(right_initial)
 
+        # el panel izquierdo arranca como activo por defecto
+        self._set_active(self._left)
+
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    def _set_active(self, panel):
+        """Marca un panel como activo y actualiza el indicador visual en el header."""
+        self._active_panel = panel
+        self._left.set_active(panel is self._left)
+        self._right.set_active(panel is self._right)
 
     def _set_initial_window_size(self):
         self.update_idletasks()
@@ -125,8 +135,14 @@ class MainWindow(tk.Tk):
         self._paned = ttk.PanedWindow(content, orient="horizontal")
         self._paned.pack(side="left", fill="both", expand=True)
 
-        self._left = FilePanel(self._paned, self.app_ctrl, side_label="Panel Izquierdo")
-        self._right = FilePanel(self._paned, self.app_ctrl, side_label="Panel Derecho")
+        self._left = FilePanel(
+            self._paned, self.app_ctrl, side_label="Panel Izquierdo",
+            on_focus=lambda: self._set_active(self._left),
+        )
+        self._right = FilePanel(
+            self._paned, self.app_ctrl, side_label="Panel Derecho",
+            on_focus=lambda: self._set_active(self._right),
+        )
         self._terminal = TerminalPanel(self._paned, self.app_ctrl)
 
         self._paned.add(self._left, weight=1)
@@ -146,23 +162,27 @@ class MainWindow(tk.Tk):
             anchor="w",
         ).pack(fill="x", side="bottom")
 
+    def _active(self):
+        """Devuelve el panel activo. Fallback al izquierdo si no hay ninguno."""
+        return self._active_panel or self._left
+
     def _wire_toolbar(self):
         self._searchbar._left = self._left
         self._searchbar._global_status = self._global_status
 
         self._toolbar.wire(
             {
-                "Atrás": self._left.go_back,
-                "Adelante": self._left.go_forward,
-                "Subir": self._left.go_up,
-                "Reindexar": lambda: self.app_ctrl.start_index(self._left._current, force=True),
-                "Nueva carpeta": self._left._new_folder,
-                "Nuevo archivo": self._left._new_file,
-                "Cortar": self._left._cut_selected,
-                "Copiar": self._left._copy_selected,
-                "Pegar": self._left._paste_here,
-                "Eliminar": lambda: self._left._delete_selected(False),
-                "Deshacer": self.app_ctrl.file_ctrl.undo,
+                "Atrás":         lambda: self._active().go_back(),
+                "Adelante":      lambda: self._active().go_forward(),
+                "Subir":         lambda: self._active().go_up(),
+                "Reindexar":     lambda: self.app_ctrl.start_index(self._active()._current, force=True),
+                "Nueva carpeta": lambda: self._active()._new_folder(),
+                "Nuevo archivo": lambda: self._active()._new_file(),
+                "Cortar":        lambda: self._active()._cut_selected(),
+                "Copiar":        lambda: self._active()._copy_selected(),
+                "Pegar":         lambda: self._active()._paste_here(),
+                "Eliminar":      lambda: self._active()._delete_selected(False),
+                "Deshacer":      self.app_ctrl.file_ctrl.undo,
             }
         )
 
@@ -209,11 +229,12 @@ class MainWindow(tk.Tk):
         selection = self._fav_list.curselection()
         if selection:
             path = self._fav_list.get(selection[0]).strip()
-            self._left.navigate(path)
+            self._active().navigate(path)
 
     def _add_current_fav(self):
-        if self._left._current:
-            self.app_ctrl.add_favorite(self._left._current)
+        current = self._active()._current
+        if current:
+            self.app_ctrl.add_favorite(current)
             self._load_favorites()
 
     def _remove_fav(self):
