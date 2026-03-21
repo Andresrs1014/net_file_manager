@@ -1,83 +1,97 @@
 import tkinter as tk
+
 from ui.theme import get_theme
 
+
 class Toolbar(tk.Frame):
-    def __init__(self, parent, app_ctrl, on_theme_change, **kwargs):
+    def __init__(self, parent, app_ctrl, on_theme_change, on_terminal_toggle=None, **kwargs):
         self.t = get_theme(app_ctrl.get_theme())
         super().__init__(parent, bg=self.t["toolbar"], height=46, **kwargs)
         self.pack_propagate(False)
-        self.app_ctrl        = app_ctrl
+        self.app_ctrl = app_ctrl
         self.on_theme_change = on_theme_change
-        self._buttons        = {}
+        self.on_terminal_toggle = on_terminal_toggle
+        self._buttons = {}
         self._build()
 
     def _build(self):
         t = self.t
-
         buttons = [
-            ("⬅",  "Atrás"),
-            ("➡",  "Adelante"),
-            ("⬆",  "Subir"),
-            ("⟳",  "Reindexar"),
+            ("←", "Atrás"),
+            ("→", "Adelante"),
+            ("↑", "Subir"),
+            ("⟳", "Reindexar"),
             ("📁", "Nueva carpeta"),
             ("📄", "Nuevo archivo"),
-            ("✂",  "Cortar"),
-            ("⎘",  "Copiar"),
+            ("✂", "Cortar"),
+            ("⧉", "Copiar"),
             ("📋", "Pegar"),
-            ("🗑",  "Eliminar"),
-            ("↩",  "Deshacer"),
+            ("🗑", "Eliminar"),
+            ("↩", "Deshacer"),
         ]
 
         for icon, key in buttons:
-            b = tk.Button(
+            button = tk.Button(
                 self,
                 text=f" {icon}  {key} ",
-                bg=str(t["bg_secondary"]),
-                fg=str(t["text_primary"]),
+                bg=t["bg_secondary"],
+                fg=t["text_primary"],
                 font=("Segoe UI", 9),
                 relief="flat",
-                activebackground=str(t["accent"]),
+                activebackground=t["accent"],
                 activeforeground="white",
                 cursor="hand2",
                 padx=10,
                 pady=8,
-                bd=0
+                bd=0,
             )
-            b.pack(side="left", padx=2, pady=5)
-            b.bind("<Enter>", lambda e, w=b: w.config(
-                bg=t["accent"], fg="white"))
-            b.bind("<Leave>", lambda e, w=b: w.config(
-                bg=t["bg_secondary"], fg=t["text_primary"]))
-            self._buttons[key] = b
+            button.pack(side="left", padx=2, pady=5)
+            button.bind("<Enter>", lambda _e, w=button: w.config(bg=t["accent"], fg="white"))
+            button.bind(
+                "<Leave>",
+                lambda _e, w=button: w.config(bg=t["bg_secondary"], fg=t["text_primary"]),
+            )
+            self._buttons[key] = button
 
-        # Toggle tema — siempre a la derecha
         self._toggle_lbl = tk.StringVar(
-            value="🌙  Dark" if self.app_ctrl.get_theme() == "dark" else "☀  Light"
+            value="Dark" if self.app_ctrl.get_theme() == "dark" else "Light"
         )
+
+        if self.on_terminal_toggle is not None:
+            tk.Button(
+                self,
+                text="Terminal",
+                command=self.on_terminal_toggle,
+                bg=t["bg_secondary"],
+                fg=t["text_primary"],
+                font=("Segoe UI", 9, "bold"),
+                relief="flat",
+                cursor="hand2",
+                padx=12,
+                pady=8,
+                bd=0,
+            ).pack(side="right", padx=(0, 8), pady=5)
+
         tk.Button(
             self,
             textvariable=self._toggle_lbl,
             command=self._toggle_theme,
-            bg=str(t["accent"]),
+            bg=t["accent"],
             fg="white",
             font=("Segoe UI", 9, "bold"),
             relief="flat",
             cursor="hand2",
             padx=12,
             pady=8,
-            bd=0
+            bd=0,
         ).pack(side="right", padx=10, pady=5)
 
     def _toggle_theme(self):
         new = self.app_ctrl.toggle_theme()
-        self._toggle_lbl.set("🌙  Dark" if new == "dark" else "☀  Light")
+        self._toggle_lbl.set("Dark" if new == "dark" else "Light")
         self.on_theme_change(new)
 
     def wire(self, actions: dict):
-        """
-        Conecta callbacks a los botones.
-        actions = {"Atrás": fn, "Copiar": fn, ...}
-        """
         for key, cmd in actions.items():
             if key in self._buttons:
                 self._buttons[key].config(command=cmd)

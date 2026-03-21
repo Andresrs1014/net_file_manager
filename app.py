@@ -5,7 +5,7 @@ import ctypes
 sys.path.insert(0, os.path.dirname(__file__))
 
 from controllers.app_controller import AppController
-from ui.main_window_v2 import MainWindow
+from ui.main_window import MainWindow
 
 
 def _enable_dpi_awareness():
