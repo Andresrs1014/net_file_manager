@@ -14,12 +14,13 @@ from ui.theme import get_theme
 
 
 class FilePanel(tk.Frame):
-    def __init__(self, parent, app_ctrl, side_label="Panel", **kwargs):
+    def __init__(self, parent, app_ctrl, side_label="Panel", on_focus=None, **kwargs):
         self.t = get_theme(app_ctrl.get_theme())
         super().__init__(parent, bg=self.t["bg_secondary"], **kwargs)
         self.app_ctrl = app_ctrl
         self.file_ctrl = app_ctrl.file_ctrl
         self.label = side_label
+        self._on_focus_cb = on_focus
         self._current = ""
         self._history = []
         self._hist_pos = -1
@@ -35,16 +36,17 @@ class FilePanel(tk.Frame):
         self._bind_events()
 
     def _build_header(self, t):
-        header = tk.Frame(self, bg=t["toolbar"], height=32)
-        header.pack(fill="x")
-        header.pack_propagate(False)
-        tk.Label(
-            header,
+        self._header = tk.Frame(self, bg=t["toolbar"], height=32)
+        self._header.pack(fill="x")
+        self._header.pack_propagate(False)
+        self._header_label = tk.Label(
+            self._header,
             text=self.label,
             bg=t["toolbar"],
             fg=t["accent"],
             font=("Segoe UI", 9, "bold"),
-        ).pack(side="left", padx=10)
+        )
+        self._header_label.pack(side="left", padx=10)
 
     def _build_pathbar(self, t):
         bar = tk.Frame(self, bg=t["bg_primary"])
@@ -183,6 +185,22 @@ class FilePanel(tk.Frame):
         self._tree.bind("<Double-1>", self._on_double_click)
         self._tree.bind("<BackSpace>", lambda _e: self.go_up())
         self._tree.bind("<Button-3>", self._show_context_menu)
+        self._tree.bind("<Button-1>", self._on_click_focus)
+        self._tree.bind("<FocusIn>", lambda _e: self._notify_focus())
+
+    def _on_click_focus(self, _event):
+        self._notify_focus()
+
+    def _notify_focus(self):
+        if self._on_focus_cb:
+            self._on_focus_cb()
+
+    def set_active(self, is_active: bool):
+        """Actualiza el indicador visual del header según si este panel está activo."""
+        t = self.t
+        color = t["accent"] if is_active else t["toolbar"]
+        self._header.config(bg=color)
+        self._header_label.config(bg=color, fg="white" if is_active else t["accent"])
 
     def navigate(self, path: str):
         path = self._normalize_path(path)
