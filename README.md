@@ -75,11 +75,11 @@ La aplicación ya incluye:
 
 ### UI
 
-- [`ui/main_window_v2.py`](C:/net_file_manager/ui/main_window_v2.py)
+- [`ui/main_window.py`](C:/net_file_manager/ui/main_window.py)
   - ventana principal usada actualmente
   - layout general, favoritos, paneles, status y terminal lateral
 
-- [`ui/file_panel_fixed.py`](C:/net_file_manager/ui/file_panel_fixed.py)
+- [`ui/file_panel.py`](C:/net_file_manager/ui/file_panel.py)
   - panel de archivos
   - navegación, historial, contexto y operaciones
 
@@ -88,12 +88,12 @@ La aplicación ya incluye:
   - filtro por extensión
   - fuzzy toggle
 
-- [`ui/toolbar_fixed.py`](C:/net_file_manager/ui/toolbar_fixed.py)
+- [`ui/toolbar.py`](C:/net_file_manager/ui/toolbar.py)
   - acciones principales
   - cambio de tema
   - toggle de terminal
 
-- [`ui/terminal_panel_v2.py`](C:/net_file_manager/ui/terminal_panel_v2.py)
+- [`ui/terminal_panel.py`](C:/net_file_manager/ui/terminal_panel.py)
   - terminal integrada en UI
   - sugerencias y panel de comandos
 
@@ -332,8 +332,7 @@ Según [`requirements.txt`](C:/net_file_manager/requirements.txt):
 
 - el sistema de terminal aún no es una shell persistente completa
 - la sugerencia de terminal es ligera, no un autocomplete profundo del sistema
-- el proyecto todavía conserva archivos anteriores y variantes nuevas coexistiendo
-- algunas partes viejas del proyecto siguen presentes pero la app actual usa la ruta moderna basada en `main_window_v2`
+- todavía hay módulos con nombre `fixed` o `v2` que podrían consolidarse más adelante
 
 ## Hoja de ruta sugerida
 
@@ -350,5 +349,4 @@ Según [`requirements.txt`](C:/net_file_manager/requirements.txt):
 La aplicación actualmente arranca desde:
 
 - [`app.py`](C:/net_file_manager/app.py)
-- usando la ventana principal [`ui/main_window_v2.py`](C:/net_file_manager/ui/main_window_v2.py)
-
+- usando la ventana principal [`ui/main_window.py`](C:/net_file_manager/ui/main_window.py)

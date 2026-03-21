@@ -1,10 +1,9 @@
-import os
-import queue
-import subprocess
-import threading
 import tkinter as tk
 from pathlib import Path
 
+from ui.terminal_commands import build_command_groups, flatten_command_groups
+from ui.terminal_session import TerminalSession
+from ui.terminal_suggest import find_suggestions
 from ui.theme import get_theme
 
 
@@ -13,77 +12,16 @@ class TerminalPanel(tk.Frame):
         self.t = get_theme(app_ctrl.get_theme())
         super().__init__(parent, bg=self.t["bg_secondary"], **kwargs)
         self.app_ctrl = app_ctrl
-        self.cwd = Path(initial_cwd or Path.cwd())
-        self._process = None
-        self._queue: queue.Queue[tuple[str, str]] = queue.Queue()
-        self._history: list[str] = []
-        self._history_index = -1
-        self._command_groups = {
-            "Comunes": [
-                "dir",
-                "Get-ChildItem -Force",
-                "cd ..",
-                "pwd",
-                "cls",
-                "tree /f",
-            ],
-            "Creación": [
-                "mkdir nueva_carpeta",
-                "New-Item archivo.txt -ItemType File",
-                "python -m venv .venv",
-                "npm init -y",
-            ],
-            "Revisión": [
-                "Get-ChildItem",
-                "Get-ChildItem -Recurse -File | Select-Object -First 30",
-                "Get-ChildItem -Recurse | Measure-Object",
-                "where python",
-                "where git",
-            ],
-            "Git": [
-                "git status",
-                "git pull",
-                "git checkout -b feature/",
-                "git branch",
-                "git log --oneline -10",
-            ],
-            "Python": [
-                "python -m venv .venv",
-                ".\\.venv\\Scripts\\activate",
-                "pip install -r requirements.txt",
-                "python -m pip install -r requirements.txt",
-                "pytest",
-                "python -m pip list",
-            ],
-            "Node": [
-                "npm install",
-                "npm run dev",
-                "npm test",
-                "npm run build",
-                "npm list --depth=0",
-            ],
-            "Docker": [
-                "docker compose up -d",
-                "docker compose down",
-                "docker compose logs -f",
-                "docker ps",
-            ],
-            "Red": [
-                "ping 8.8.8.8",
-                "ipconfig",
-                "net use",
-                "ssh user@server",
-            ],
-        }
-        self._command_templates: list[str] = []
+        self.session = TerminalSession(initial_cwd or Path.cwd())
+        self.cwd = self.session.cwd
+        self._command_groups = build_command_groups(self.cwd)
+        self._command_templates = flatten_command_groups(self._command_groups)
         self._active_group = "Comunes"
         self._command_menu = None
-        self._command_group_list = None
-        self._command_item_list = None
-        self._suggest_box = None
-        self._suggestions: list[str] = []
+        self._command_group_list: tk.Listbox | None = None
+        self._command_item_list: tk.Listbox | None = None
+        self._suggest_box: tk.Listbox | None = None
         self._build()
-        self._refresh_command_templates()
         self.after(80, self._drain_queue)
 
     def _build(self):
@@ -169,19 +107,19 @@ class TerminalPanel(tk.Frame):
         footer.pack(fill="x", padx=8, pady=(0, 8))
         self._footer = footer
 
-        prompt = tk.Label(
+        tk.Label(
             footer,
             text="PS>",
             bg=t["bg_secondary"],
             fg=t["accent"],
             font=("Consolas", 11, "bold"),
-        )
-        prompt.pack(side="left", padx=(4, 8))
+        ).pack(side="left", padx=(4, 8))
 
         self._preset_var = tk.StringVar(value="Comunes")
-        self._preset_button = tk.Menubutton(
+        self._preset_button = tk.Button(
             footer,
             textvariable=self._preset_var,
+            command=self._toggle_command_menu,
             bg=t["bg_secondary"],
             fg=t["text_primary"],
             activebackground=t["accent"],
@@ -193,7 +131,6 @@ class TerminalPanel(tk.Frame):
             cursor="hand2",
         )
         self._preset_button.pack(side="left", padx=(0, 8), pady=1)
-        self._preset_button.bind("<Button-1>", self._on_preset_click)
 
         self._command_var = tk.StringVar()
         self._command_entry = tk.Entry(
@@ -216,7 +153,7 @@ class TerminalPanel(tk.Frame):
         tk.Button(
             footer,
             text="Usar",
-            command=self._show_command_menu,
+            command=self._toggle_command_menu,
             bg=t["bg_secondary"],
             fg=t["text_secondary"],
             relief="flat",
@@ -239,6 +176,7 @@ class TerminalPanel(tk.Frame):
             cursor="hand2",
         ).pack(side="left", padx=(8, 0))
 
+        self._build_command_menu()
         self._append_output(f"Directorio actual: {self.cwd}\n", "meta")
         self._append_output(
             "Sugerencia: usa Ctrl o Shift para seleccionar multiples archivos.\n",
@@ -248,7 +186,6 @@ class TerminalPanel(tk.Frame):
             "Usa la lista de comandos junto a PS> para rellenar acciones comunes.\n",
             "meta",
         )
-        self._build_command_menu()
 
     def focus_terminal(self):
         self._command_entry.focus_set()
@@ -262,8 +199,8 @@ class TerminalPanel(tk.Frame):
         self._append_output(f"Directorio actual: {self.cwd}\n", "meta")
 
     def set_cwd(self, path: str):
-        target = Path(path)
-        if target.exists() and target.is_dir():
+        target = self.session.set_cwd(path)
+        if target is not None:
             self.cwd = target
             self._cwd_var.set(str(self.cwd))
             self._refresh_command_templates()
@@ -271,8 +208,8 @@ class TerminalPanel(tk.Frame):
 
     def _change_cwd(self):
         raw = self._cwd_var.get().strip()
-        target = Path(raw)
-        if target.exists() and target.is_dir():
+        target = self.session.set_cwd(raw)
+        if target is not None:
             self.cwd = target
             self._cwd_var.set(str(self.cwd))
             self._refresh_command_templates()
@@ -284,81 +221,44 @@ class TerminalPanel(tk.Frame):
         command = self._command_var.get().strip()
         if not command:
             return
-        if self._process is not None:
+        if not self.session.can_run():
             self._append_output("Ya hay un comando en ejecucion.\n", "stderr")
             return
 
-        self._history.append(command)
-        self._history_index = len(self._history)
+        self.session.remember(command)
         self._command_var.set("")
         self._hide_suggestions()
         self._append_output(f"PS {self.cwd}> {command}\n", "prompt")
 
-        if command.lower() in {"cls", "clear"}:
+        lowered = command.lower()
+        if lowered in {"cls", "clear"}:
             self.clear()
             return
-        if command.lower().startswith("cd "):
+        if lowered.startswith("cd "):
             self._handle_cd(command[3:].strip())
             return
-        if command.lower() == "cd":
+        if lowered == "cd":
             self._append_output(f"{self.cwd}\n", "stdout")
             return
 
-        thread = threading.Thread(target=self._execute_command, args=(command,), daemon=True)
-        thread.start()
+        self.session.run_async(command)
 
     def _handle_cd(self, raw_target: str):
-        target = raw_target.strip().strip('"')
-        if not target:
-            self._append_output(f"{self.cwd}\n", "stdout")
-            return
-
-        candidate = Path(target)
-        if not candidate.is_absolute():
-            candidate = (self.cwd / candidate).resolve()
-
-        if candidate.exists() and candidate.is_dir():
+        candidate = self.session.change_cwd(raw_target)
+        if candidate is not None:
             self.cwd = candidate
             self._cwd_var.set(str(self.cwd))
             self._refresh_command_templates()
             self._append_output(f"Cambiado a: {self.cwd}\n", "meta")
         else:
-            self._append_output(f"Ruta invalida: {candidate}\n", "stderr")
-
-    def _execute_command(self, command: str):
-        try:
-            self._process = subprocess.Popen(
-                [
-                    "powershell",
-                    "-NoLogo",
-                    "-NoProfile",
-                    "-Command",
-                    command,
-                ],
-                cwd=str(self.cwd),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-            )
-            stdout, stderr = self._process.communicate()
-            if stdout:
-                self._queue.put(("stdout", stdout))
-            if stderr:
-                self._queue.put(("stderr", stderr))
-            self._queue.put(("meta", f"[exit {self._process.returncode}]\n"))
-        except Exception as exc:
-            self._queue.put(("stderr", f"{exc}\n"))
-        finally:
-            self._process = None
+            self._append_output(f"Ruta invalida: {raw_target}\n", "stderr")
 
     def _drain_queue(self):
         try:
             while True:
-                tag, text = self._queue.get_nowait()
+                tag, text = self.session.queue.get_nowait()
                 self._append_output(text, tag)
-        except queue.Empty:
+        except Exception:
             pass
         self.after(80, self._drain_queue)
 
@@ -367,12 +267,6 @@ class TerminalPanel(tk.Frame):
         self._output.insert("end", text, tag)
         self._output.see("end")
         self._output.configure(state="disabled")
-
-    def _insert_command(self, value: str):
-        self._command_var.set(value)
-        self._command_entry.focus_set()
-        self._command_entry.icursor("end")
-        self._update_suggestions()
 
     def _build_command_menu(self):
         menu = tk.Frame(
@@ -434,9 +328,9 @@ class TerminalPanel(tk.Frame):
             self._command_group_list.insert("end", group)
 
         self._command_group_list.bind("<<ListboxSelect>>", self._load_selected_group)
+        self._command_group_list.bind("<Motion>", self._hover_group_item)
         self._command_item_list.bind("<Double-1>", self._use_selected_command)
         self._command_item_list.bind("<Return>", self._use_selected_command)
-        self._command_group_list.bind("<Motion>", self._hover_group_item)
         self._command_item_list.bind("<Motion>", self._hover_command_item)
 
         self._command_menu = menu
@@ -449,17 +343,12 @@ class TerminalPanel(tk.Frame):
             return
         self._show_command_menu()
 
-    def _on_preset_click(self, _event):
-        self._toggle_command_menu()
-        return "break"
-
-    def _show_command_menu(self, _event=None):
+    def _show_command_menu(self):
         if self._command_menu is None:
             return
         self.update_idletasks()
-        footer_y = self._footer.winfo_y()
         menu_height = 250
-        y = max(8, footer_y - menu_height - 8)
+        y = max(8, self._footer.winfo_y() - menu_height - 8)
         self._command_menu.place(x=8, y=y, width=max(520, self.winfo_width() - 16), height=menu_height)
 
         groups = list(self._command_groups.keys())
@@ -478,87 +367,45 @@ class TerminalPanel(tk.Frame):
             self._command_menu.place_forget()
 
     def _load_selected_group(self, _event=None):
-        if self._command_group_list is None or self._command_item_list is None:
+        group_list = self._command_group_list
+        item_list = self._command_item_list
+        if group_list is None or item_list is None:
             return
-        selection = self._command_group_list.curselection()
+        selection = group_list.curselection()
         if not selection:
             return
-        group_name = self._command_group_list.get(selection[0])
+        group_name = group_list.get(selection[0])
         self._active_group = group_name
         self._preset_var.set(group_name)
-        self._command_item_list.delete(0, "end")
+        item_list.delete(0, "end")
         for item in self._command_groups.get(group_name, []):
-            self._command_item_list.insert("end", item)
-        if self._command_item_list.size() > 0:
-            self._command_item_list.selection_set(0)
-            self._command_item_list.activate(0)
+            item_list.insert("end", item)
+        if item_list.size() > 0:
+            item_list.selection_set(0)
+            item_list.activate(0)
 
     def _use_selected_command(self, _event=None):
-        if self._command_item_list is None:
+        item_list = self._command_item_list
+        if item_list is None:
             return "break"
-        selection = self._command_item_list.curselection()
+        selection = item_list.curselection()
         if not selection:
             return "break"
-        value = self._command_item_list.get(selection[0])
+        value = item_list.get(selection[0])
         self._insert_command(value)
         self._hide_command_menu()
         return "break"
 
-    def _refresh_command_templates(self):
-        templates = []
-
-        if (self.cwd / "requirements.txt").exists() or (self.cwd / "pyproject.toml").exists():
-            templates.extend(
-                [
-                    "python -m venv .venv",
-                    ".\\.venv\\Scripts\\activate",
-                    "pip install -r requirements.txt",
-                    "python -m pip install -r requirements.txt",
-                    "pytest",
-                ]
-            )
-
-        if (self.cwd / "package.json").exists():
-            templates.extend(
-                [
-                    "npm install",
-                    "npm run dev",
-                    "npm test",
-                    "npm run build",
-                ]
-            )
-
-        if (self.cwd / "docker-compose.yml").exists() or (self.cwd / "compose.yaml").exists():
-            templates.extend(
-                [
-                    "docker compose up -d",
-                    "docker compose down",
-                    "docker compose logs -f",
-                ]
-            )
-
-        dynamic_common = [
-            "Get-ChildItem -Force",
-            "Get-ChildItem -Recurse -File | Select-Object -First 50",
-            f'cd "{self.cwd}"',
-        ]
-        self._command_groups["Comunes"] = self._dedupe_templates(
-            dynamic_common + [item for item in self._command_groups["Comunes"] if item not in dynamic_common]
-        )
-        self._command_templates = self._dedupe_templates(
-            templates + [item for group in self._command_groups.values() for item in group]
-        )
+    def _insert_command(self, value: str):
+        self._command_var.set(value)
+        self._command_entry.focus_set()
+        self._command_entry.icursor("end")
         self._update_suggestions()
 
-    @staticmethod
-    def _dedupe_templates(items: list[str]) -> list[str]:
-        seen = set()
-        ordered = []
-        for item in items:
-            if item not in seen:
-                seen.add(item)
-                ordered.append(item)
-        return ordered
+    def _refresh_command_templates(self):
+        self._command_groups = build_command_groups(self.cwd)
+        self._command_templates = flatten_command_groups(self._command_groups)
+        self._update_suggestions()
 
     def _on_command_change(self, event):
         if event.keysym in {"Up", "Down", "Return", "Escape", "Tab"}:
@@ -566,37 +413,21 @@ class TerminalPanel(tk.Frame):
         self._update_suggestions()
 
     def _update_suggestions(self):
-        raw = self._command_var.get().strip().lower()
-        if len(raw) < 2:
-            self._hide_suggestions()
-            return
-
-        pool = self._dedupe_templates(
-            self._history[::-1] + self._command_templates + self._path_suggestions()
+        matches = find_suggestions(
+            self._command_var.get(),
+            self.session.history,
+            self._command_templates,
+            self.cwd,
         )
-        matches = [item for item in pool if raw in item.lower()][:8]
         if not matches:
             self._hide_suggestions()
             return
         self._show_suggestions(matches)
 
-    def _path_suggestions(self) -> list[str]:
-        items = []
-        try:
-            for child in sorted(self.cwd.iterdir(), key=lambda p: p.name.lower())[:20]:
-                if child.is_dir():
-                    items.append(f'cd "{child.name}"')
-                    items.append(f'Get-ChildItem "{child.name}"')
-                else:
-                    items.append(child.name)
-        except OSError:
-            return []
-        return items
-
     def _show_suggestions(self, matches: list[str]):
         if self._suggest_box is None or not self._suggest_box.winfo_exists():
             self._suggest_box = tk.Listbox(
-                self._footer,
+                self,
                 bg="#111417",
                 fg="#f4f7fa",
                 selectbackground=self.t["accent"],
@@ -609,19 +440,17 @@ class TerminalPanel(tk.Frame):
             self._suggest_box.bind("<Double-1>", self._use_selected_suggestion)
             self._suggest_box.bind("<Return>", self._use_selected_suggestion)
 
-        self._suggestions = matches
         self._suggest_box.delete(0, "end")
         for item in matches:
             self._suggest_box.insert("end", item)
         self._suggest_box.selection_clear(0, "end")
         self._suggest_box.selection_set(0)
 
-        self._footer.update_idletasks()
-        entry = self._command_entry
-        x = entry.winfo_x()
+        self.update_idletasks()
         list_height = min(8, max(3, len(matches))) * 22
-        y = -(list_height + 8)
-        width = entry.winfo_width()
+        x = self._footer.winfo_x() + self._command_entry.winfo_x()
+        y = self._footer.winfo_y() - list_height - 8
+        width = self._command_entry.winfo_width()
         self._suggest_box.configure(height=min(8, max(3, len(matches))))
         self._suggest_box.place(x=x, y=y, width=width)
         self._suggest_box.lift()
@@ -650,42 +479,40 @@ class TerminalPanel(tk.Frame):
 
     def _history_up(self, _event):
         self._hide_command_menu()
-        if not self._history:
+        value = self.session.history_up()
+        if value is None:
             return "break"
-        self._history_index = max(0, self._history_index - 1)
-        self._command_var.set(self._history[self._history_index])
+        self._command_var.set(value)
         self._command_entry.icursor("end")
         return "break"
 
     def _history_down(self, _event):
         self._hide_command_menu()
-        if not self._history:
+        if not self.session.history:
             return "break"
-        self._history_index = min(len(self._history), self._history_index + 1)
-        if self._history_index >= len(self._history):
-            self._command_var.set("")
-        else:
-            self._command_var.set(self._history[self._history_index])
+        self._command_var.set(self.session.history_down())
         self._command_entry.icursor("end")
         return "break"
 
     def _hover_group_item(self, event):
-        if self._command_group_list is None:
+        group_list = self._command_group_list
+        if group_list is None:
             return
-        index = self._command_group_list.nearest(event.y)
+        index = group_list.nearest(event.y)
         if index < 0:
             return
-        self._command_group_list.selection_clear(0, "end")
-        self._command_group_list.selection_set(index)
-        self._command_group_list.activate(index)
+        group_list.selection_clear(0, "end")
+        group_list.selection_set(index)
+        group_list.activate(index)
         self._load_selected_group()
 
     def _hover_command_item(self, event):
-        if self._command_item_list is None:
+        item_list = self._command_item_list
+        if item_list is None:
             return
-        index = self._command_item_list.nearest(event.y)
+        index = item_list.nearest(event.y)
         if index < 0:
             return
-        self._command_item_list.selection_clear(0, "end")
-        self._command_item_list.selection_set(index)
-        self._command_item_list.activate(index)
+        item_list.selection_clear(0, "end")
+        item_list.selection_set(index)
+        item_list.activate(index)
