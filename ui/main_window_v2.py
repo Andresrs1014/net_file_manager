@@ -4,7 +4,7 @@ from tkinter import ttk
 
 from ui.file_panel_fixed import FilePanel
 from ui.search_bar import SearchBar
-from ui.terminal_panel import TerminalPanel
+from ui.terminal_panel_v2 import TerminalPanel
 from ui.theme import get_theme
 from ui.toolbar_fixed import Toolbar
 
@@ -16,9 +16,9 @@ class MainWindow(tk.Tk):
         self.t = get_theme(app_ctrl.get_theme())
 
         self.title("NetVault - Gestor de Archivos de Red")
-        self.geometry("1380x820")
         self.minsize(980, 620)
         self.configure(bg=self.t["bg_primary"])
+        self._set_initial_window_size()
 
         self._terminal_visible = False
 
@@ -35,6 +35,18 @@ class MainWindow(tk.Tk):
         self._right.navigate(right_initial)
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    def _set_initial_window_size(self):
+        self.update_idletasks()
+        screen_w = self.winfo_screenwidth()
+        screen_h = self.winfo_screenheight()
+
+        width = min(1720, max(1100, int(screen_w * 0.88)))
+        height = min(960, max(700, int(screen_h * 0.84)))
+
+        x = max(0, (screen_w - width) // 2)
+        y = max(0, (screen_h - height) // 2)
+        self.geometry(f"{width}x{height}+{x}+{y}")
 
     def _build_toolbar(self):
         self._toolbar = Toolbar(
