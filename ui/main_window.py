@@ -7,7 +7,7 @@ from ui.search_bar import SearchBar
 from ui.terminal_panel import TerminalPanel
 from ui.theme import get_theme
 from ui.toolbar import Toolbar
-
+from ui.chat_window import ChatWindow
 
 class MainWindow(tk.Tk):
     def __init__(self, app_ctrl):
@@ -64,6 +64,7 @@ class MainWindow(tk.Tk):
             self.app_ctrl,
             self._on_theme_change,
             on_terminal_toggle=self._toggle_terminal,
+            on_ai_toggle=self._open_chat,
         )
         self._toolbar.pack(fill="x")
 
@@ -206,6 +207,15 @@ class MainWindow(tk.Tk):
         self._terminal.set_cwd(self._left._current or os.path.expanduser("~"))
         self._terminal.focus_terminal()
         self._global_status.set("  Terminal abierta en el costado derecho.")
+        
+    def _open_chat(self):
+        
+        if hasattr(self, "_chat_window") and self._chat_window.winfo_exists():
+            self._chat_window.lift()
+            self._chat_window.focus_force()
+            return
+        folder = self._active()._current or ""
+        self._chat_window = ChatWindow(self, self.app_ctrl, initial_folder=folder)
 
     def _subscribe_events(self):
         def on_event(event, data):

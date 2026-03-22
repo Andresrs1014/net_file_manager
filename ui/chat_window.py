@@ -1,0 +1,456 @@
+import threading
+import tkinter as tk
+from tkinter import ttk
+
+from ai.model_config import (
+    AVAILABLE_MODELS,
+    get_default_model,
+    get_model_id,
+    get_model_label,
+)
+from ai.context_builder import build_context
+from ai.ollama_provider import OllamaProvider
+from ui.theme import get_theme
+
+
+SYSTEM_PROMPT = """Eres un asistente técnico integrado en NetVault, un gestor de archivos de red.
+Tu rol principal es ayudar al usuario a:
+- Entender la arquitectura y el código de sus proyectos
+- Aprender conceptos de programación con ejemplos reales
+- Sugerir mejoras y buenas prácticas
+- Proponer estructuras de proyectos
+- Explicar comandos y tecnologías
+
+Responde siempre en español. Sé conciso pero completo.
+Cuando el usuario te comparta contexto de una carpeta, úsalo para dar respuestas específicas a ese proyecto."""
+
+
+class ChatWindow(tk.Toplevel):
+    """
+    Ventana de chat independiente con modelo local via Ollama.
+    Se abre desde la toolbar de NetVault como una ventana separada.
+    """
+
+    def __init__(self, parent, app_ctrl, initial_folder: str = ""):
+        super().__init__(parent)
+        self.app_ctrl = app_ctrl
+        self.t = get_theme(app_ctrl.get_theme())
+        self._folder = initial_folder
+        self._messages: list[dict] = []
+        self._streaming = False
+
+        # provider inicializado con el modelo por defecto según hardware
+        default_model = get_default_model()
+        self._provider = OllamaProvider(model=default_model)
+
+        self.title("NetVault AI")
+        self.geometry("780x680")
+        self.minsize(600, 500)
+        self.configure(bg=self.t["bg_primary"])
+        self.resizable(True, True)
+
+        # la ventana es independiente pero no bloquea NetVault
+        self.transient(parent)
+
+        self._build()
+        self._check_availability()
+
+    # ── Construcción de UI ───────────────────────────────────────────
+
+    def _build(self):
+        t = self.t
+        self._build_header(t)
+        self._build_chat_area(t)
+        self._build_context_bar(t)
+        self._build_input_area(t)
+
+    def _build_header(self, t):
+        header = tk.Frame(self, bg=t["toolbar"], height=52)
+        header.pack(fill="x")
+        header.pack_propagate(False)
+
+        tk.Label(
+            header,
+            text="⬡  NetVault AI",
+            bg=t["toolbar"],
+            fg=t["accent"],
+            font=("Segoe UI", 11, "bold"),
+        ).pack(side="left", padx=16)
+
+        # selector de modelo — igual que Claude con sus modelos
+        model_labels = [m["label"] for m in AVAILABLE_MODELS]
+        default_label = get_model_label(self._provider.model_name())
+
+        self._model_var = tk.StringVar(value=default_label)
+        model_menu = ttk.Combobox(
+            header,
+            textvariable=self._model_var,
+            values=model_labels,
+            state="readonly",
+            font=("Segoe UI", 9),
+            width=32,
+        )
+        model_menu.pack(side="left", padx=(8, 0), pady=10)
+        model_menu.bind("<<ComboboxSelected>>", self._on_model_change)
+
+        # indicador de estado del modelo
+        self._status_var = tk.StringVar(value="● conectando...")
+        self._status_label = tk.Label(
+            header,
+            textvariable=self._status_var,
+            bg=t["toolbar"],
+            fg=t["text_secondary"],
+            font=("Segoe UI", 8),
+        )
+        self._status_label.pack(side="left", padx=12)
+
+        tk.Button(
+            header,
+            text="Limpiar",
+            command=self._clear_chat,
+            bg=t["bg_secondary"],
+            fg=t["text_secondary"],
+            font=("Segoe UI", 8),
+            relief="flat",
+            cursor="hand2",
+            padx=10,
+            pady=4,
+        ).pack(side="right", padx=8, pady=10)
+
+    def _build_chat_area(self, t):
+        frame = tk.Frame(self, bg=t["bg_primary"])
+        frame.pack(fill="both", expand=True, padx=10, pady=(8, 0))
+
+        self._chat = tk.Text(
+            frame,
+            bg=t["bg_secondary"],
+            fg=t["text_primary"],
+            insertbackground=t["accent"],
+            relief="flat",
+            wrap="word",
+            font=("Segoe UI", 10),
+            padx=16,
+            pady=12,
+            state="disabled",
+            cursor="arrow",
+        )
+
+        # tags de color para cada rol
+        self._chat.tag_configure("user_name",      foreground=t["accent"],         font=("Segoe UI", 9, "bold"))
+        self._chat.tag_configure("user_text",      foreground=t["text_primary"],   font=("Segoe UI", 10))
+        self._chat.tag_configure("ai_name",        foreground="#4fc3f7",           font=("Segoe UI", 9, "bold"))
+        self._chat.tag_configure("ai_text",        foreground=t["text_primary"],   font=("Segoe UI", 10))
+        self._chat.tag_configure("code",           foreground="#a5d6a7",           font=("Consolas", 9), background=t["bg_primary"])
+        self._chat.tag_configure("thinking",       foreground=t["text_secondary"], font=("Segoe UI", 9, "italic"))
+        self._chat.tag_configure("error",          foreground="#ef5350",           font=("Segoe UI", 9))
+        self._chat.tag_configure("system",         foreground=t["text_secondary"], font=("Segoe UI", 8, "italic"))
+
+        scrollbar = tk.Scrollbar(frame, orient="vertical", command=self._chat.yview)
+        self._chat.configure(yscrollcommand=scrollbar.set)
+        self._chat.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+    def _build_context_bar(self, t):
+        """Barra que muestra la carpeta activa cuyo contexto se envía al modelo."""
+        bar = tk.Frame(self, bg=t["bg_primary"])
+        bar.pack(fill="x", padx=10, pady=(4, 0))
+
+        tk.Label(
+            bar,
+            text="Contexto:",
+            bg=t["bg_primary"],
+            fg=t["text_secondary"],
+            font=("Segoe UI", 8),
+        ).pack(side="left")
+
+        self._folder_var = tk.StringVar(
+            value=self._folder if self._folder else "sin carpeta activa"
+        )
+        tk.Label(
+            bar,
+            textvariable=self._folder_var,
+            bg=t["bg_primary"],
+            fg=t["accent"],
+            font=("Segoe UI", 8),
+        ).pack(side="left", padx=(4, 0))
+
+        tk.Button(
+            bar,
+            text="usar carpeta activa",
+            command=self._refresh_folder,
+            bg=t["bg_primary"],
+            fg=t["text_secondary"],
+            font=("Segoe UI", 8),
+            relief="flat",
+            cursor="hand2",
+        ).pack(side="right")
+
+    def _build_input_area(self, t):
+        footer = tk.Frame(self, bg=t["bg_primary"])
+        footer.pack(fill="x", padx=10, pady=8)
+
+        # área de texto multilinea para el input
+        input_frame = tk.Frame(footer, bg=t["bg_secondary"], bd=0)
+        input_frame.pack(fill="x", pady=(0, 6))
+
+        self._input = tk.Text(
+            input_frame,
+            bg=t["bg_secondary"],
+            fg=t["text_primary"],
+            insertbackground=t["accent"],
+            relief="flat",
+            font=("Segoe UI", 10),
+            height=3,
+            padx=12,
+            pady=8,
+            wrap="word",
+        )
+        self._input.pack(fill="x")
+        self._input.bind("<Return>",       self._on_enter)
+        self._input.bind("<Shift-Return>", lambda _e: None)  # shift+enter = salto de línea
+
+        btn_row = tk.Frame(footer, bg=t["bg_primary"])
+        btn_row.pack(fill="x")
+
+        self._send_btn = tk.Button(
+            btn_row,
+            text="Enviar  ↵",
+            command=self._send_message,
+            bg=t["accent"],
+            fg="white",
+            font=("Segoe UI", 9, "bold"),
+            relief="flat",
+            cursor="hand2",
+            padx=16,
+            pady=6,
+        )
+        self._send_btn.pack(side="right")
+
+        self._cancel_btn = tk.Button(
+            btn_row,
+            text="Cancelar",
+            command=self._cancel_stream,
+            bg=t["bg_secondary"],
+            fg=t["text_secondary"],
+            font=("Segoe UI", 9),
+            relief="flat",
+            cursor="hand2",
+            padx=12,
+            pady=6,
+            state="disabled",
+        )
+        self._cancel_btn.pack(side="right", padx=(0, 6))
+
+        tk.Label(
+            btn_row,
+            text="Enter para enviar · Shift+Enter para nueva línea",
+            bg=t["bg_primary"],
+            fg=t["text_secondary"],
+            font=("Segoe UI", 8),
+        ).pack(side="left")
+
+    # ── Lógica de chat ───────────────────────────────────────────────
+
+    def _check_availability(self):
+        """Verifica disponibilidad del modelo en background."""
+        def check():
+            available = self._provider.is_available()
+            self.after(0, lambda: self._update_status(available))
+
+        threading.Thread(target=check, daemon=True).start()
+
+    def _update_status(self, available: bool):
+        if available:
+            self._status_var.set(f"● {self._provider.model_name()}")
+            self._status_label.config(fg="#66bb6a")
+            self._append_system(
+                f"Modelo {self._provider.model_name()} listo. "
+                f"Puedes preguntarme sobre tu proyecto o cualquier tema técnico.\n"
+            )
+        else:
+            self._status_var.set("● sin conexión")
+            self._status_label.config(fg="#ef5350")
+            self._append_system(
+                "No se pudo conectar con Ollama. "
+                "Verifica que esté corriendo con: ollama serve\n"
+            )
+
+    def _on_model_change(self, _event=None):
+        label = self._model_var.get()
+        model_id = get_model_id(label)
+        self._provider.set_model(model_id)
+        self._status_var.set("● verificando...")
+        self._status_label.config(fg=self.t["text_secondary"])
+        self._append_system(f"Cambiando a {model_id}...\n")
+        self._check_availability()
+
+    def _on_enter(self, event):
+        """Enter envía, Shift+Enter inserta salto de línea."""
+        if event.state & 0x1:  # Shift presionado
+            return None
+        self._send_message()
+        return "break"
+
+    def _send_message(self):
+        if self._streaming:
+            return
+
+        text = self._input.get("1.0", "end-1c").strip()
+        if not text:
+            return
+
+        self._input.delete("1.0", "end")
+        self._messages.append({"role": "user", "content": text})
+        self._append_user(text)
+        self._start_stream()
+
+    def _start_stream(self):
+        self._streaming = True
+        self._send_btn.config(state="disabled")
+        self._cancel_btn.config(state="normal")
+
+        # inserta el indicador de "pensando"
+        self._append_thinking()
+
+        # construye el sistema con contexto de carpeta si hay una activa
+        system_content = SYSTEM_PROMPT
+        if self._folder:
+            ctx = build_context(self._folder)
+            system_content += f"\n\n## Contexto del proyecto actual\n{ctx}"
+
+        full_messages = [{"role": "system", "content": system_content}] + self._messages
+
+        self._cancel_flag = False
+        threading.Thread(
+            target=self._stream_response,
+            args=(full_messages,),
+            daemon=True,
+        ).start()
+
+    def _stream_response(self, messages: list[dict]):
+        """Corre en background — hace streaming token a token a la UI."""
+        full_response = []
+        first_token = True
+
+        try:
+            for token in self._provider.chat(messages, stream=True):
+                if self._cancel_flag:
+                    self.after(0, self._on_stream_cancelled)
+                    return
+
+                if first_token:
+                    # quita el indicador de "pensando" cuando llega el primer token
+                    self.after(0, self._remove_thinking)
+                    self.after(0, self._start_ai_bubble)
+                    first_token = False
+
+                full_response.append(token)
+                self.after(0, lambda t=token: self._append_token(t))
+
+        except Exception as e:
+            self.after(0, lambda: self._append_error(str(e)))
+        finally:
+            response_text = "".join(full_response)
+            if response_text:
+                self._messages.append({"role": "assistant", "content": response_text})
+            self.after(0, self._on_stream_done)
+
+    def _cancel_stream(self):
+        self._cancel_flag = True
+
+    def _on_stream_cancelled(self):
+        self._remove_thinking()
+        self._append_system("Respuesta cancelada.\n")
+        self._on_stream_done()
+
+    def _on_stream_done(self):
+        self._streaming = False
+        self._send_btn.config(state="normal")
+        self._cancel_btn.config(state="disabled")
+        self._append_raw("\n\n", "ai_text")
+
+    # ── Renderizado de mensajes ──────────────────────────────────────
+
+    def _append_user(self, text: str):
+        self._append_raw("Tú\n", "user_name")
+        self._append_raw(text + "\n\n", "user_text")
+
+    def _append_thinking(self):
+        self._append_raw("NetVault AI\n", "ai_name")
+        self._thinking_mark = self._chat.index("end-1c")
+        self._append_raw("pensando...\n", "thinking")
+        self._animate_thinking(0)
+
+    def _animate_thinking(self, dots: int):
+        """Anima los puntos de 'pensando...' mientras espera el primer token."""
+        if not self._streaming or not self._thinking_mark:
+            return
+        symbols = ["pensando   ", "pensando.  ", "pensando.. ", "pensando..."]
+        try:
+            self._chat.configure(state="normal")
+            # reemplaza la línea de pensando
+            line_start = self._thinking_mark
+            line_end = f"{line_start} lineend"
+            self._chat.delete(line_start, line_end)
+            self._chat.insert(line_start, symbols[dots % 4], "thinking")
+            self._chat.configure(state="disabled")
+        except Exception:
+            return
+        self.after(400, lambda: self._animate_thinking(dots + 1))
+
+    def _remove_thinking(self):
+        """Elimina el indicador de pensando antes de mostrar la respuesta."""
+        try:
+            if hasattr(self, "_thinking_mark") and self._thinking_mark:
+                self._chat.configure(state="normal")
+                line_start = self._thinking_mark
+                line_end = f"{line_start} lineend+1c"
+                self._chat.delete(line_start, line_end)
+                self._chat.configure(state="disabled")
+                self._thinking_mark = None
+        except Exception:
+            pass
+
+    def _start_ai_bubble(self):
+        """Inserta el nombre del AI antes del streaming de tokens."""
+        self._append_raw("NetVault AI\n", "ai_name")
+
+    def _append_token(self, token: str):
+        """Inserta un token en streaming."""
+        self._append_raw(token, "ai_text")
+
+    def _append_error(self, msg: str):
+        self._remove_thinking()
+        self._append_raw(f"Error: {msg}\n", "error")
+
+    def _append_system(self, msg: str):
+        self._append_raw(msg, "system")
+
+    def _append_raw(self, text: str, tag: str):
+        self._chat.configure(state="normal")
+        self._chat.insert("end", text, tag)
+        self._chat.see("end")
+        self._chat.configure(state="disabled")
+
+    def _clear_chat(self):
+        self._messages.clear()
+        self._chat.configure(state="normal")
+        self._chat.delete("1.0", "end")
+        self._chat.configure(state="disabled")
+        self._append_system("Conversación limpiada.\n")
+
+    # ── Contexto de carpeta ──────────────────────────────────────────
+
+    def set_folder(self, folder_path: str):
+        """Llamado desde NetVault cuando el usuario navega a una carpeta."""
+        self._folder = folder_path
+        self._folder_var.set(folder_path)
+
+    def _refresh_folder(self):
+        """Intenta obtener la carpeta activa desde el app_ctrl."""
+        try:
+            folder = self.app_ctrl.config.get("last_path_left", "")
+            if folder:
+                self.set_folder(folder)
+        except Exception:
+            pass
