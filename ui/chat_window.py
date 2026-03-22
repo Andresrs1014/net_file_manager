@@ -26,6 +26,7 @@ class ChatWindow(tk.Toplevel):
         self.app_ctrl = app_ctrl
         self.t = get_theme(app_ctrl.get_theme())
         self._folder = initial_folder
+        self._folders: list[str] = [initial_folder] if initial_folder else []
         self._messages: list[dict] = []
         self._streaming = False
         self._thinking_mark = None
@@ -168,38 +169,54 @@ class ChatWindow(tk.Toplevel):
         scrollbar.pack(side="right", fill="y")
 
     def _build_context_bar(self, t):
+        """Barra de rutas activas - sincroniza con terminal y permite multiples directorios."""
         bar = tk.Frame(self, bg=t["bg_primary"])
         bar.pack(fill="x", padx=10, pady=(4, 0))
 
         tk.Label(
             bar,
-            text="Contexto:",
+            text="Rutas activas:",
             bg=t["bg_primary"],
             fg=t["text_secondary"],
             font=("Segoe UI", 8),
         ).pack(side="left")
 
-        self._folder_var = tk.StringVar(
-            value=self._folder if self._folder else "sin carpeta activa"
-        )
-        tk.Label(
+        tk.Button(
             bar,
-            textvariable=self._folder_var,
+            text="+ agregar ruta",
+            command=self._add_folder,
             bg=t["bg_primary"],
-            fg=t["accent"],
+            fg=t["text_secondary"],
             font=("Segoe UI", 8),
-        ).pack(side="left", padx=(4, 0))
+            relief="flat",
+            cursor="hand2",
+        ).pack(side="right", padx=(4, 0))
 
         tk.Button(
             bar,
-            text="usar carpeta activa",
+            text="usar terminal",
+            command=self._use_terminal_cwd,
+            bg=t["bg_primary"],
+            fg=t["accent"],
+            font=("Segoe UI", 8),
+            relief="flat",
+            cursor="hand2",
+        ).pack(side="right", padx=(4, 0))
+
+        tk.Button(
+            bar,
+            text="usar panel activo",
             command=self._refresh_folder,
             bg=t["bg_primary"],
             fg=t["text_secondary"],
             font=("Segoe UI", 8),
             relief="flat",
             cursor="hand2",
-        ).pack(side="right")
+        ).pack(side="right", padx=(4, 0))
+
+        self._folders_frame = tk.Frame(self, bg=t["bg_primary"])
+        self._folders_frame.pack(fill="x", padx=10, pady=(2, 0))
+        self._render_folders()
 
     def _build_input_area(self, t):
         footer = tk.Frame(self, bg=t["bg_primary"])
@@ -328,7 +345,12 @@ class ChatWindow(tk.Toplevel):
         from ai.prompts import SYSTEM_PROMPT as BASE_PROMPT
 
         system_content = BASE_PROMPT
-        if self._folder:
+        if self._folders:
+            ctx_parts = []
+            for folder in self._folders:
+                ctx_parts.append(f"### Ruta: {folder}\n{build_context(folder)}")
+            system_content += "\n\n## Rutas activas\n" + "\n\n".join(ctx_parts)
+        elif self._folder:
             ctx = build_context(self._folder)
             system_content += f"\n\n## Contexto del proyecto actual\n{ctx}"
 
@@ -367,8 +389,13 @@ class ChatWindow(tk.Toplevel):
             if response_text:
                 self._messages.append({"role": "assistant", "content": response_text})
 
-            if response_text and self._folder:
-                actions = parse_actions(response_text, self._folder)
+            active_folder = self._folder or (self._folders[0] if self._folders else "")
+            if response_text and active_folder:
+                actions = parse_actions(response_text, active_folder)
+                if actions:
+                    self.after(0, lambda a=actions: self._show_actions(a))
+            elif response_text:
+                actions = parse_actions(response_text, "")
                 if actions:
                     self.after(0, lambda a=actions: self._show_actions(a))
 
@@ -555,16 +582,104 @@ class ChatWindow(tk.Toplevel):
         self._chat.configure(state="disabled")
         self._append_system("Conversacion limpiada.\n")
 
+    def _render_folders(self):
+        """Renderiza las chips de rutas activas."""
+        t = self.t
+        for widget in self._folders_frame.winfo_children():
+            widget.destroy()
+
+        if not self._folders:
+            tk.Label(
+                self._folders_frame,
+                text="sin rutas activas",
+                bg=t["bg_primary"],
+                fg=t["text_secondary"],
+                font=("Segoe UI", 8, "italic"),
+            ).pack(side="left")
+            return
+
+        for folder in self._folders:
+            chip = tk.Frame(self._folders_frame, bg=t["bg_secondary"])
+            chip.pack(side="left", padx=(0, 4), pady=2)
+
+            name = folder.split("\\")[-1] or folder.split("/")[-1] or folder
+            tk.Label(
+                chip,
+                text=name,
+                bg=t["bg_secondary"],
+                fg=t["accent"],
+                font=("Segoe UI", 8),
+                padx=6,
+                pady=2,
+                cursor="hand2",
+            ).pack(side="left")
+
+            tk.Button(
+                chip,
+                text="✕",
+                bg=t["bg_secondary"],
+                fg=t["text_secondary"],
+                font=("Segoe UI", 7),
+                relief="flat",
+                cursor="hand2",
+                padx=2,
+                pady=2,
+                bd=0,
+                command=lambda f=folder: self._remove_folder(f),
+            ).pack(side="left")
+
+    def _add_folder(self):
+        """Abre dialogo para agregar una ruta manualmente."""
+        from tkinter import filedialog
+
+        folder = filedialog.askdirectory(title="Seleccionar carpeta")
+        if folder and folder not in self._folders:
+            self._folders.append(folder)
+            if not self._folder:
+                self._folder = folder
+            self._render_folders()
+            self._append_system(f"Ruta agregada: {folder}\n")
+
+    def _remove_folder(self, folder: str):
+        """Quita una ruta de la lista activa."""
+        if folder in self._folders:
+            self._folders.remove(folder)
+        if self._folder == folder:
+            self._folder = self._folders[0] if self._folders else ""
+        self._render_folders()
+
+    def _use_terminal_cwd(self):
+        """Sincroniza el contexto con el directorio actual de la terminal."""
+        try:
+            master = self.master
+            if hasattr(master, "_terminal") and hasattr(master._terminal, "cwd"):
+                folder = str(master._terminal.cwd)
+                if folder and folder not in self._folders:
+                    self._folders.append(folder)
+                self._folder = folder
+                self._render_folders()
+                self._append_system(f"Contexto sincronizado con terminal: {folder}\n")
+        except Exception:
+            self._append_system("No se pudo leer el directorio de la terminal.\n")
+
     def set_folder(self, folder_path: str):
         """Llamado desde NetVault cuando el usuario navega a una carpeta."""
         self._folder = folder_path
-        self._folder_var.set(folder_path)
+        if folder_path and folder_path not in self._folders:
+            self._folders.append(folder_path)
+        self._render_folders()
 
     def _refresh_folder(self):
-        """Intenta obtener la carpeta activa desde el app_ctrl."""
+        """Usa la carpeta del panel activo de NetVault."""
         try:
-            folder = self.app_ctrl.config.get("last_path_left", "")
-            if folder:
-                self.set_folder(folder)
+            master = self.master
+            if hasattr(master, "_active"):
+                folder = master._active()._current
+                if folder:
+                    if folder not in self._folders:
+                        self._folders.append(folder)
+                    self._folder = folder
+                    self._render_folders()
+                    self._append_system(f"Contexto actualizado: {folder}\n")
         except Exception:
             pass
