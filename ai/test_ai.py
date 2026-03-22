@@ -7,7 +7,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(__file__))
 
-from ai.ollama_provider import OllamaProvider
+from ollama_provider import OllamaProvider
 
 
 def main():
@@ -42,7 +42,7 @@ def main():
 
     messages = [
         {"role": "system", "content": "Eres un asistente técnico. Responde en español, de forma concisa."},
-        {"role": "user",   "content": "¿Qué es un decorador en Python? Explícalo en 2 oraciones máximo."},
+        {"role": "user",   "content": "¿Qué es un decorador en Python? Explícalo extendidamente y con 3 ejemplos"},
     ]
 
     print("  Respuesta: ", end="", flush=True)

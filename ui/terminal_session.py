@@ -135,8 +135,8 @@ class TerminalSession:
 
     def history_down(self) -> str | None:
         if not self.history:
-            return "None"
+            return None
         self.history_index = min(len(self.history), self.history_index + 1)
         if self.history_index >= len(self.history):
-            return "None"
+            return None
         return self.history[self.history_index]

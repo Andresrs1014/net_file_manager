@@ -10,7 +10,7 @@ from ui.main_window import MainWindow
 
 def _enable_dpi_awareness():
     if os.name != "nt":
-        return
+        return 
     try:
         ctypes.windll.shcore.SetProcessDpiAwareness(1)
     except Exception:

@@ -241,7 +241,34 @@ class TerminalPanel(tk.Frame):
             self._append_output(f"{self.cwd}\n", "stdout")
             return
 
+        # comandos TUI que necesitan ventana externa
+        TUI_COMMANDS = {"lazygit", "htop", "btop"}
+        if lowered.split()[0] in TUI_COMMANDS:
+            self._open_external(command)
+            return
+
         self.session.run_async(command)
+
+    def _open_external(self, command: str):
+        """Abre comandos TUI en una ventana de PowerShell externa."""
+        import subprocess
+
+        try:
+            subprocess.Popen(
+                [
+                    "powershell",
+                    "-NoLogo",
+                    "-NoProfile",
+                    "-Command",
+                    f"Set-Location '{self.cwd}'; {command}; pause",
+                ],
+                creationflags=subprocess.CREATE_NEW_CONSOLE,
+            )
+            self._append_output(
+                f"Abriendo {command.split()[0]} en ventana externa...\n", "meta"
+            )
+        except Exception as e:
+            self._append_output(f"[Error abriendo ventana externa: {e}]\n", "stderr")
 
     def _handle_cd(self, raw_target: str):
         candidate = self.session.change_cwd(raw_target)
