@@ -262,9 +262,17 @@ class TerminalPanel(tk.Frame):
             pass
         self.after(80, self._drain_queue)
 
-    def _append_output(self, text: str, tag: str):
+    MAX_LINES = 2000
+
+    def _append_output(self, text: str, tag: str, max_lines=MAX_LINES):
         self._output.configure(state="normal")
         self._output.insert("end", text, tag)
+
+        line_count = int(self._output.index("end-1c").split(".")[0])
+        if line_count > max_lines:
+            excess = line_count - max_lines
+            self._output.delete("1.0", f"{excess + 1}.0")
+
         self._output.see("end")
         self._output.configure(state="disabled")
 

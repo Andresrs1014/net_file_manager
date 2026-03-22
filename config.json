@@ -1,9 +1,10 @@
 {
   "network_paths": [],
   "favorites": [
-    "C:\\Users\\USUARIO\\Downloads"
+    "C:\\Users\\USUARIO\\Downloads",
+    "C:\\Users\\USUARIO\\Documents\\GitHub"
   ],
   "theme": "dark",
-  "last_path_left": "C:\\Users\\USUARIO\\Downloads",
+  "last_path_left": "C:\\Users\\USUARIO\\Documents\\GitHub\\net_file_manager",
   "last_path_right": "C:\\Users\\USUARIO\\Documents"
 }
