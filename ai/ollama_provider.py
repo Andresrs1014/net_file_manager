@@ -4,7 +4,7 @@ import urllib.request
 import urllib.error
 from typing import Generator
 
-from ai.provider import AIProvider
+from provider import AIProvider
 
 
 OLLAMA_BASE_URL = "http://localhost:11434"
