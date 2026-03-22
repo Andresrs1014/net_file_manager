@@ -439,9 +439,16 @@ class ChatWindow(tk.Toplevel):
         self._chat.configure(state="disabled")
 
     def _confirm_action(self, action, btn_frame):
-        """Ejecuta la acción confirmada por el usuario."""
         try:
-            terminal = getattr(self.app_ctrl, "_terminal_session", None)
+            # busca la terminal session en la ventana principal
+            terminal = None
+            try:
+                master = self.master
+                if hasattr(master, "_terminal") and hasattr(master._terminal, "session"):
+                    terminal = master._terminal.session
+            except Exception:
+                pass
+
             ok, msg = execute_action(action, self.app_ctrl.file_ctrl, terminal)
 
             self._chat.configure(state="normal")
@@ -460,7 +467,6 @@ class ChatWindow(tk.Toplevel):
 
             if ok:
                 try:
-                    master = self.master
                     if hasattr(master, "_active"):
                         master._active().refresh()
                 except Exception:
