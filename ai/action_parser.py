@@ -74,7 +74,7 @@ def parse_actions(text: str, base_folder: str) -> list[ParsedAction]:
 
 
 def _build_action(action_type: str, data: dict, base_folder: str) -> Optional[ParsedAction]:
-    base = Path(base_folder)
+    base = Path(base_folder) if base_folder else Path(".")
 
     if action_type == ACTION_CREATE_FOLDER:
         rel_path = data.get("path", "")

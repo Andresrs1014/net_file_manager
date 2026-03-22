@@ -64,7 +64,11 @@ class CreateFileCommand(FileCommand):
     def __init__(self, path):
         self.path = path
 
-    def execute(self): Path(self.path).touch()
+    def execute(self):
+        path = Path(self.path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
+
     def undo(self):
         if os.path.exists(self.path): os.remove(self.path)
 
