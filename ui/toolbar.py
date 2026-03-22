@@ -4,13 +4,22 @@ from ui.theme import get_theme
 
 
 class Toolbar(tk.Frame):
-    def __init__(self, parent, app_ctrl, on_theme_change, on_terminal_toggle=None, **kwargs):
+    def __init__(
+        self,
+        parent,
+        app_ctrl,
+        on_theme_change,
+        on_terminal_toggle=None,
+        on_ai_toggle=None,
+        **kwargs,
+    ):
         self.t = get_theme(app_ctrl.get_theme())
         super().__init__(parent, bg=self.t["toolbar"], height=46, **kwargs)
         self.pack_propagate(False)
         self.app_ctrl = app_ctrl
         self.on_theme_change = on_theme_change
         self.on_terminal_toggle = on_terminal_toggle
+        self.on_ai_toggle = on_ai_toggle
         self._buttons = {}
         self._build()
 
@@ -71,6 +80,21 @@ class Toolbar(tk.Frame):
                 pady=8,
                 bd=0,
             ).pack(side="right", padx=(0, 8), pady=5)
+
+        if self.on_ai_toggle is not None:
+            tk.Button(
+                self,
+                text="⬡ AI",
+                command=self.on_ai_toggle,
+                bg=t["bg_secondary"],
+                fg=t["accent"],
+                font=("Segoe UI", 9, "bold"),
+                relief="flat",
+                cursor="hand2",
+                padx=12,
+                pady=8,
+                bd=0,
+            ).pack(side="right", padx=(0, 4), pady=5)
 
         tk.Button(
             self,
