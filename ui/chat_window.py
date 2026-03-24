@@ -40,7 +40,6 @@ class ChatWindow(tk.Toplevel):
         self.minsize(600, 500)
         self.configure(bg=self.t["bg_primary"])
         self.resizable(True, True)
-        self.transient(parent)
 
         self._build()
         self._check_availability()
@@ -339,12 +338,11 @@ class ChatWindow(tk.Toplevel):
         self._streaming = True
         self._send_btn.config(state="disabled")
         self._cancel_btn.config(state="normal")
-
         self._append_thinking()
 
         from ai.prompts import SYSTEM_PROMPT as BASE_PROMPT
 
-        system_content = BASE_PROMPT
+        system_content = BASE_PROMPT.replace("{MODEL_NAME}", self._provider.model_name())
         if self._folders:
             ctx_parts = []
             for folder in self._folders:
