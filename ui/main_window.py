@@ -65,6 +65,7 @@ class MainWindow(tk.Tk):
             self._on_theme_change,
             on_terminal_toggle=self._toggle_terminal,
             on_ai_toggle=self._open_chat,
+            on_scaffolder=self._open_scaffolder,
         )
         self._toolbar.pack(fill="x")
 
@@ -216,6 +217,15 @@ class MainWindow(tk.Tk):
             return
         folder = self._active()._current or ""
         self._chat_window = ChatWindow(self, self.app_ctrl, initial_folder=folder)
+
+    def _open_scaffolder(self):
+        from ui.scaffolder_window import ScaffolderWindow
+
+        if hasattr(self, "_scaffolder_window") and self._scaffolder_window.winfo_exists():
+            self._scaffolder_window.lift()
+            self._scaffolder_window.focus_force()
+            return
+        self._scaffolder_window = ScaffolderWindow(self, self.app_ctrl)
 
     def _subscribe_events(self):
         def on_event(event, data):
