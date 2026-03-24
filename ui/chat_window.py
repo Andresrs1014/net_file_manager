@@ -40,6 +40,7 @@ class ChatWindow(tk.Toplevel):
         self.minsize(600, 500)
         self.configure(bg=self.t["bg_primary"])
         self.resizable(True, True)
+        self.transient(parent)
 
         self._build()
         self._check_availability()
