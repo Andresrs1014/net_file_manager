@@ -11,6 +11,7 @@ class Toolbar(tk.Frame):
         on_theme_change,
         on_terminal_toggle=None,
         on_ai_toggle=None,
+        on_scaffolder=None,
         **kwargs,
     ):
         self.t = get_theme(app_ctrl.get_theme())
@@ -20,23 +21,24 @@ class Toolbar(tk.Frame):
         self.on_theme_change = on_theme_change
         self.on_terminal_toggle = on_terminal_toggle
         self.on_ai_toggle = on_ai_toggle
+        self.on_scaffolder = on_scaffolder
         self._buttons = {}
         self._build()
 
     def _build(self):
         t = self.t
         buttons = [
-            ("←", "Atrás"),
-            ("→", "Adelante"),
-            ("↑", "Subir"),
-            ("⟳", "Reindexar"),
-            ("📁", "Nueva carpeta"),
-            ("📄", "Nuevo archivo"),
-            ("✂", "Cortar"),
-            ("⧉", "Copiar"),
-            ("📋", "Pegar"),
-            ("🗑", "Eliminar"),
-            ("↩", "Deshacer"),
+            ("<-", "Atras"),
+            ("->", "Adelante"),
+            ("^", "Subir"),
+            ("R", "Reindexar"),
+            ("[+]", "Nueva carpeta"),
+            ("[ ]", "Nuevo archivo"),
+            ("X", "Cortar"),
+            ("C", "Copiar"),
+            ("P", "Pegar"),
+            ("D", "Eliminar"),
+            ("U", "Deshacer"),
         ]
 
         for icon, key in buttons:
@@ -84,10 +86,25 @@ class Toolbar(tk.Frame):
         if self.on_ai_toggle is not None:
             tk.Button(
                 self,
-                text="⬡ AI",
+                text="AI",
                 command=self.on_ai_toggle,
                 bg=t["bg_secondary"],
                 fg=t["accent"],
+                font=("Segoe UI", 9, "bold"),
+                relief="flat",
+                cursor="hand2",
+                padx=12,
+                pady=8,
+                bd=0,
+            ).pack(side="right", padx=(0, 4), pady=5)
+
+        if self.on_scaffolder is not None:
+            tk.Button(
+                self,
+                text="Nuevo Proyecto",
+                command=self.on_scaffolder,
+                bg=t["bg_secondary"],
+                fg=t["text_primary"],
                 font=("Segoe UI", 9, "bold"),
                 relief="flat",
                 cursor="hand2",
@@ -116,9 +133,14 @@ class Toolbar(tk.Frame):
         self.on_theme_change(new)
 
     def wire(self, actions: dict):
+        aliases = {
+            "Atrás": "Atras",
+            "AtrÃ¡s": "Atras",
+        }
         for key, cmd in actions.items():
-            if key in self._buttons:
-                self._buttons[key].config(command=cmd)
+            resolved = aliases.get(key, key)
+            if resolved in self._buttons:
+                self._buttons[resolved].config(command=cmd)
 
     def get_button(self, key: str):
         return self._buttons.get(key)
