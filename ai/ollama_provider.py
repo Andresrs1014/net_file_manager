@@ -50,6 +50,11 @@ class OllamaProvider(AIProvider):
                 "model": self._model,
                 "messages": messages,
                 "stream": stream,
+                "think": False,
+                "options": {
+                    "temperature": 0.7,
+                    "num_predict": 1024,
+                },
             }
         ).encode("utf-8")
 
@@ -69,6 +74,8 @@ class OllamaProvider(AIProvider):
                             continue
                         try:
                             chunk = json.loads(line)
+                            if chunk.get("message", {}).get("role") == "think":
+                                continue
                             token = chunk.get("message", {}).get("content", "")
                             if token:
                                 yield token
