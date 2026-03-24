@@ -5,14 +5,13 @@ from pathlib import Path
 from typing import Optional
 
 
-# Acciones que el modelo puede proponer
-ACTION_CREATE_FOLDER  = "create_folder"
-ACTION_CREATE_FILE    = "create_file"
-ACTION_WRITE_FILE     = "write_file"
-ACTION_RENAME         = "rename"
-ACTION_MOVE           = "move"
-ACTION_DELETE_TRASH   = "delete_trash"
-ACTION_RUN_COMMAND    = "run_command"
+ACTION_CREATE_FOLDER = "create_folder"
+ACTION_CREATE_FILE = "create_file"
+ACTION_WRITE_FILE = "write_file"
+ACTION_RENAME = "rename"
+ACTION_MOVE = "move"
+ACTION_DELETE_TRASH = "delete_trash"
+ACTION_RUN_COMMAND = "run_command"
 
 SAFE_ACTIONS = {
     ACTION_CREATE_FOLDER,
@@ -24,51 +23,56 @@ SAFE_ACTIONS = {
     ACTION_RUN_COMMAND,
 }
 
-# Comandos que NUNCA se ejecutan sin confirmación explícita adicional
 HIGH_RISK_COMMANDS = {
-    "rm", "rmdir", "del", "format", "rd",
-    "remove-item", "clear-recyclebin",
+    "rm",
+    "rmdir",
+    "del",
+    "format",
+    "rd",
+    "remove-item",
+    "clear-recyclebin",
 }
 
 
 @dataclass
 class ParsedAction:
-    action:      str
-    params:      dict
-    description: str   # texto legible para mostrar al usuario
+    action: str
+    params: dict
+    description: str
     is_high_risk: bool = False
 
 
 def parse_actions(text: str, base_folder: str) -> list[ParsedAction]:
-    """
-    Busca bloques de acción en la respuesta del modelo.
-    El modelo debe responder con bloques JSON entre ```action y ```.
-
-    Ejemplo que el modelo puede generar:
-```action
-        {
-          "action": "create_folder",
-          "path": "src/services",
-          "description": "Crear carpeta services dentro de src"
-        }
-```
-    """
     actions = []
-    pattern = r"```action\s*([\s\S]*?)```"
-    matches = re.findall(pattern, text, re.IGNORECASE)
+
+    pattern_closed = r"```action\s*([\s\S]*?)```"
+    pattern_open = r"```action\s*([\s\S]*?)(?:```|$)"
+
+    matches = re.findall(pattern_open, text, re.IGNORECASE)
 
     for match in matches:
+        match = match.strip()
+        if not match:
+            continue
+
         try:
-            data = json.loads(match.strip())
-            action_type = data.get("action", "")
-            if action_type not in SAFE_ACTIONS:
+            data = json.loads(match)
+        except json.JSONDecodeError:
+            json_match = re.search(r"\{[\s\S]*\}", match)
+            if not json_match:
+                continue
+            try:
+                data = json.loads(json_match.group())
+            except json.JSONDecodeError:
                 continue
 
-            parsed = _build_action(action_type, data, base_folder)
-            if parsed:
-                actions.append(parsed)
-        except (json.JSONDecodeError, Exception):
+        action_type = data.get("action", "")
+        if action_type not in SAFE_ACTIONS:
             continue
+
+        parsed = _build_action(action_type, data, base_folder)
+        if parsed:
+            actions.append(parsed)
 
     return actions
 
@@ -100,7 +104,7 @@ def _build_action(action_type: str, data: dict, base_folder: str) -> Optional[Pa
 
     if action_type == ACTION_WRITE_FILE:
         rel_path = data.get("path", "")
-        content  = data.get("content", "")
+        content = data.get("content", "")
         if not rel_path:
             return None
         full_path = str(base / rel_path)
@@ -120,7 +124,7 @@ def _build_action(action_type: str, data: dict, base_folder: str) -> Optional[Pa
         return ParsedAction(
             action=action_type,
             params={"path": full_path, "new_name": new_name},
-            description=f"Renombrar {rel_path} → {new_name}",
+            description=f"Renombrar {rel_path} -> {new_name}",
         )
 
     if action_type == ACTION_MOVE:
@@ -133,7 +137,7 @@ def _build_action(action_type: str, data: dict, base_folder: str) -> Optional[Pa
         return ParsedAction(
             action=action_type,
             params={"src": full_src, "dst": full_dst},
-            description=f"Mover {src} → {dst}",
+            description=f"Mover {src} -> {dst}",
         )
 
     if action_type == ACTION_DELETE_TRASH:
@@ -166,8 +170,8 @@ def _build_action(action_type: str, data: dict, base_folder: str) -> Optional[Pa
 
 def execute_action(action: ParsedAction, file_ctrl, terminal_session=None) -> tuple[bool, str]:
     """
-    Ejecuta una acción confirmada por el usuario.
-    Retorna (éxito, mensaje).
+    Ejecuta una accion confirmada por el usuario.
+    Retorna (exito, mensaje).
     """
     try:
         a = action.action
@@ -175,13 +179,13 @@ def execute_action(action: ParsedAction, file_ctrl, terminal_session=None) -> tu
 
         if a == ACTION_CREATE_FOLDER:
             parent = str(Path(p["path"]).parent)
-            name   = Path(p["path"]).name
+            name = Path(p["path"]).name
             file_ctrl.create_folder(parent, name)
             return True, f"Carpeta creada: {p['path']}"
 
         if a == ACTION_CREATE_FILE:
             parent = str(Path(p["path"]).parent)
-            name   = Path(p["path"]).name
+            name = Path(p["path"]).name
             file_ctrl.create_file(parent, name)
             return True, f"Archivo creado: {p['path']}"
 
@@ -193,23 +197,23 @@ def execute_action(action: ParsedAction, file_ctrl, terminal_session=None) -> tu
 
         if a == ACTION_RENAME:
             file_ctrl.rename(p["path"], p["new_name"])
-            return True, f"Renombrado correctamente"
+            return True, "Renombrado correctamente"
 
         if a == ACTION_MOVE:
             file_ctrl.ops.move(p["src"], p["dst"])
-            return True, f"Movido correctamente"
+            return True, "Movido correctamente"
 
         if a == ACTION_DELETE_TRASH:
             file_ctrl.delete([p["path"]], permanent=False)
-            return True, f"Eliminado a papelera"
+            return True, "Eliminado a papelera"
 
         if a == ACTION_RUN_COMMAND:
             if terminal_session:
                 terminal_session.run_async(p["command"])
-                return True, f"Comando enviado a terminal"
+                return True, "Comando enviado a terminal"
             return False, "Terminal no disponible"
 
-        return False, "Acción desconocida"
+        return False, "Accion desconocida"
 
     except Exception as e:
         return False, f"Error: {e}"
