@@ -1,60 +1,150 @@
 import { useState, useEffect } from 'react';
+import { Toolbar } from './components/layout/Toolbar';
+import { Sidebar } from './components/layout/Sidebar';
+import { FilePanel } from './components/file-panel/FilePanel';
+import { Terminal } from './components/terminal/Terminal';
+import { fileService, getConfig as getAppConfig, setConfig as setAppConfig } from './services/fileService';
 
 function App() {
   const [ready, setReady] = useState(false);
+  const [leftPath, setLeftPath] = useState('C:\\');
+  const [rightPath, setRightPath] = useState('C:\\');
+  const [activePanel, setActivePanel] = useState<'left' | 'right'>('left');
+  const [terminalVisible, setTerminalVisible] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [favorites, setFavorites] = useState<string[]>([]);
 
   useEffect(() => {
-    // Verificar que Electron API está disponible
     if (window.electronAPI) {
       setReady(true);
+      loadConfig();
     }
   }, []);
+
+  const loadConfig = async () => {
+    try {
+      const config = await getAppConfig();
+      if (config.lastLeftPath) setLeftPath(config.lastLeftPath);
+      if (config.lastRightPath) setRightPath(config.lastRightPath);
+      if (config.favorites) setFavorites(config.favorites);
+    } catch (error) {
+      console.error('Error loading config:', error);
+    }
+  };
+
+  const savePath = async (side: 'left' | 'right', path: string) => {
+    try {
+      await setAppConfig(side === 'left' ? 'lastLeftPath' : 'lastRightPath', path);
+    } catch (error) {
+      console.error('Error saving path:', error);
+    }
+  };
+
+  const handleLeftPathChange = (path: string) => {
+    setLeftPath(path);
+    savePath('left', path);
+  };
+
+  const handleRightPathChange = (path: string) => {
+    setRightPath(path);
+    savePath('right', path);
+  };
+
+  const handleOpenFolder = async () => {
+    const folderPath = await fileService.showOpenFolderDialog();
+    if (folderPath) {
+      if (activePanel === 'left') {
+        handleLeftPathChange(folderPath);
+      } else {
+        handleRightPathChange(folderPath);
+      }
+    }
+  };
+
+  const handleToggleTerminal = () => {
+    setTerminalVisible(!terminalVisible);
+  };
+
+  const handleToggleTheme = () => {
+    document.documentElement.classList.toggle('dark');
+  };
+
+  const handleSidebarNavigate = (path: string) => {
+    if (activePanel === 'left') {
+      handleLeftPathChange(path);
+    } else {
+      handleRightPathChange(path);
+    }
+  };
 
   if (!ready) {
     return (
       <div className="h-screen flex items-center justify-center bg-[#1a1a1a] text-gray-400">
-        <p>Cargando NetVault...</p>
+        <div className="text-center">
+          <div className="text-4xl mb-4 animate-pulse">📁</div>
+          <p className="text-lg">Cargando NetVault...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="h-screen flex flex-col bg-[#1a1a1a] text-[#f5f5f5]">
+    <div className="h-screen flex flex-col bg-[#1a1a1a] text-[#e5e5e5] overflow-hidden">
       {/* Toolbar */}
-      <header className="h-12 bg-[#333] flex items-center px-4 gap-4 border-b border-[#404040]">
-        <h1 className="text-lg font-semibold text-[#3b82f6]">NetVault</h1>
-        <div className="flex-1" />
-        <button className="px-3 py-1 text-sm bg-[#3b82f6] text-white rounded hover:bg-[#2563eb] transition-colors">
-          Abrir Carpeta
-        </button>
-      </header>
+      <Toolbar
+        onOpenFolder={handleOpenFolder}
+        onToggleTerminal={handleToggleTerminal}
+        onToggleTheme={handleToggleTheme}
+        terminalVisible={terminalVisible}
+      />
 
-      {/* Content */}
-      <main className="flex-1 flex">
-        {/* Panel izquierdo */}
-        <div className="flex-1 flex flex-col border-r border-[#404040]">
-          <div className="h-10 bg-[#262626] flex items-center px-4 border-b border-[#404040]">
-            <span className="text-sm text-[#a3a3a3]">Panel izquierdo</span>
-          </div>
-          <div className="flex-1 p-4 text-[#a3a3a3]">
-            <p>Selecciona una carpeta para comenzar</p>
-          </div>
-        </div>
+      {/* Main content */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Sidebar */}
+        <Sidebar
+          favorites={favorites}
+          onNavigate={handleSidebarNavigate}
+          onToggle={() => setSidebarOpen(!sidebarOpen)}
+          isOpen={sidebarOpen}
+        />
 
-        {/* Panel derecho */}
-        <div className="flex-1 flex flex-col">
-          <div className="h-10 bg-[#262626] flex items-center px-4 border-b border-[#404040]">
-            <span className="text-sm text-[#a3a3a3]">Panel derecho</span>
-          </div>
-          <div className="flex-1 p-4 text-[#a3a3a3]">
-            <p>Selecciona una carpeta para comenzar</p>
-          </div>
+        {/* Panels */}
+        <div className="flex flex-1">
+          {/* Left panel */}
+          <FilePanel
+            id="left"
+            path={leftPath}
+            onPathChange={handleLeftPathChange}
+            isActive={activePanel === 'left'}
+            onActivate={() => setActivePanel('left')}
+          />
+
+          {/* Divider */}
+          <div className="w-1 bg-[#333] cursor-col-resize hover:bg-[#3b82f6] transition-colors" />
+
+          {/* Right panel or Terminal */}
+          {terminalVisible ? (
+            <Terminal
+              initialCwd={leftPath}
+              onClose={() => setTerminalVisible(false)}
+            />
+          ) : (
+            <FilePanel
+              id="right"
+              path={rightPath}
+              onPathChange={handleRightPathChange}
+              isActive={activePanel === 'right'}
+              onActivate={() => setActivePanel('right')}
+            />
+          )}
         </div>
-      </main>
+      </div>
 
       {/* Status bar */}
-      <footer className="h-6 bg-[#262626] flex items-center px-4 text-xs text-[#a3a3a3] border-t border-[#404040]">
-        NetVault listo
+      <footer className="h-6 bg-[#262626] flex items-center px-4 text-xs text-[#737373] border-t border-[#404040]">
+        <span>NetVault listo</span>
+        <div className="flex-1" />
+        <span>{activePanel === 'left' ? 'Panel izquierdo' : 'Panel derecho'} activo</span>
       </footer>
     </div>
   );
