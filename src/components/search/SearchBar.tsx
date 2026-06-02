@@ -1,5 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { searchService, debounce, SearchResult } from '../../services/searchService';
+import { searchService, debounce } from '../../services/searchService';
+
+interface SearchResult {
+  entry: { name: string; path: string; isDirectory: boolean; isFile: boolean; size?: number };
+  score: number;
+  source: 'index' | 'ai';
+}
 
 interface SearchBarProps {
   onResultSelect?: (result: SearchResult) => void;
@@ -13,12 +19,22 @@ export function SearchBar({ onResultSelect, placeholder = 'Buscar archivos...' }
   const [showResults, setShowResults] = useState(false);
   const [fuzzyEnabled, setFuzzyEnabled] = useState(true);
   const [extensionFilter, setExtensionFilter] = useState('');
+  const [indexStatus, setIndexStatus] = useState<{ files: number; dirs: number } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
 
-  // Debounced search
+  useEffect(() => {
+    const updateStats = () => {
+      const stats = searchService.getStats();
+      setIndexStatus({ files: stats.totalFiles, dirs: stats.totalDirs });
+    };
+    updateStats();
+    const interval = setInterval(updateStats, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
   const debouncedSearch = useCallback(
-    debounce(async (searchQuery: string) => {
+    debounce((searchQuery: string) => {
       if (!searchQuery.trim()) {
         setResults([]);
         setIsSearching(false);
@@ -26,20 +42,16 @@ export function SearchBar({ onResultSelect, placeholder = 'Buscar archivos...' }
       }
 
       setIsSearching(true);
-      try {
-        const searchResults = await searchService.search(searchQuery, {
-          fuzzy: fuzzyEnabled,
-          extension: extensionFilter || undefined,
-          maxResults: 20,
-        });
-        setResults(searchResults);
-      } catch (error) {
-        console.error('Search error:', error);
-        setResults([]);
-      } finally {
-        setIsSearching(false);
-      }
-    }, 300),
+      
+      const searchResults = searchService.search(searchQuery, {
+        fuzzy: fuzzyEnabled,
+        extensions: extensionFilter ? [extensionFilter] : undefined,
+        maxResults: 20,
+      });
+      
+      setResults(searchResults);
+      setIsSearching(false);
+    }, 50),
     [fuzzyEnabled, extensionFilter]
   );
 
@@ -47,7 +59,6 @@ export function SearchBar({ onResultSelect, placeholder = 'Buscar archivos...' }
     debouncedSearch(query);
   }, [query, debouncedSearch]);
 
-  // Handle click outside to close results
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (
@@ -58,7 +69,6 @@ export function SearchBar({ onResultSelect, placeholder = 'Buscar archivos...' }
         setShowResults(false);
       }
     };
-
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
@@ -78,9 +88,15 @@ export function SearchBar({ onResultSelect, placeholder = 'Buscar archivos...' }
     }
   };
 
+  const handleReindex = async () => {
+    setIsSearching(true);
+    searchService.clear();
+    setResults([]);
+    setIsSearching(false);
+  };
+
   return (
     <div className="relative flex-1 max-w-md">
-      {/* Search input */}
       <div className="flex items-center bg-[#1a1a1a] border border-[#404040] rounded focus-within:border-[#3b82f6] transition-colors">
         <span className="pl-3 text-[#737373]">🔍</span>
         <input
@@ -97,7 +113,6 @@ export function SearchBar({ onResultSelect, placeholder = 'Buscar archivos...' }
           className="flex-1 px-3 py-2 bg-transparent text-[#e5e5e5] outline-none text-sm placeholder-[#737373]"
         />
         
-        {/* Fuzzy toggle */}
         <button
           onClick={() => setFuzzyEnabled(!fuzzyEnabled)}
           className={`px-2 py-1 text-xs border-l border-[#404040] transition-colors ${
@@ -108,14 +123,12 @@ export function SearchBar({ onResultSelect, placeholder = 'Buscar archivos...' }
           ~ fuzzy
         </button>
 
-        {/* Loading indicator */}
         {isSearching && (
           <div className="px-3">
             <div className="w-4 h-4 border-2 border-[#3b82f6] border-t-transparent rounded-full animate-spin" />
           </div>
         )}
 
-        {/* Clear button */}
         {query && (
           <button
             onClick={() => {
@@ -130,19 +143,31 @@ export function SearchBar({ onResultSelect, placeholder = 'Buscar archivos...' }
         )}
       </div>
 
-      {/* Extension filter */}
       <div className="flex items-center mt-1 gap-2">
         <span className="text-xs text-[#737373]">Ext:</span>
         <input
           type="text"
           value={extensionFilter}
           onChange={(e) => setExtensionFilter(e.target.value)}
-          placeholder=".pdf, .ts, etc."
-          className="px-2 py-0.5 text-xs bg-[#1a1a1a] border border-[#404040] rounded text-[#a3a3a3] outline-none focus:border-[#3b82f6]"
+          placeholder=".pdf, .ts"
+          className="px-2 py-0.5 text-xs bg-[#1a1a1a] border border-[#404040] rounded text-[#a3a3a3] outline-none focus:border-[#3b82f6] w-24"
         />
+        
+        {indexStatus && (
+          <span className="text-xs text-[#737373]" title={`${indexStatus.files} archivos`}>
+            📇 {indexStatus.files}
+          </span>
+        )}
+        
+        <button
+          onClick={handleReindex}
+          className="text-xs text-[#737373] hover:text-[#e5e5e5] transition-colors ml-2"
+          title="Reindexar"
+        >
+          ↻
+        </button>
       </div>
 
-      {/* Results dropdown */}
       {showResults && query.trim() && (
         <div
           ref={resultsRef}
@@ -150,7 +175,7 @@ export function SearchBar({ onResultSelect, placeholder = 'Buscar archivos...' }
         >
           {results.length === 0 ? (
             <div className="p-4 text-center text-[#737373]">
-              {isSearching ? 'Buscando...' : 'No se encontraron resultados'}
+              {isSearching ? 'Buscando...' : 'Sin resultados. Presiona "Indexar".'}
             </div>
           ) : (
             <div className="py-1">
@@ -160,9 +185,7 @@ export function SearchBar({ onResultSelect, placeholder = 'Buscar archivos...' }
                   onClick={() => handleResultClick(result)}
                   className="w-full px-3 py-2 text-left hover:bg-[#333] flex items-center gap-2 transition-colors"
                 >
-                  <span className="text-base">
-                    {result.entry.isDirectory ? '📁' : '📄'}
-                  </span>
+                  <span className="text-base">{result.entry.isDirectory ? '📁' : '📄'}</span>
                   <div className="flex-1 min-w-0">
                     <div className="text-sm text-[#e5e5e5] truncate">{result.entry.name}</div>
                     <div className="text-xs text-[#737373] truncate">{result.entry.path}</div>
@@ -172,10 +195,9 @@ export function SearchBar({ onResultSelect, placeholder = 'Buscar archivos...' }
             </div>
           )}
           
-          {/* Footer */}
           <div className="px-3 py-2 border-t border-[#333] text-xs text-[#737373] flex justify-between">
-            <span>{results.length} resultados</span>
-            <span>↑↓ Navegar · Enter Seleccionar · Esc Cerrar</span>
+            <span>{results.length} resultados · Ultra-fast 🔥</span>
+            <span>↑↓ Navegar · Enter</span>
           </div>
         </div>
       )}

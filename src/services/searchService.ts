@@ -1,115 +1,126 @@
-import Fuse from 'fuse.js';
+/**
+ * Unified Search Service - Ultra-fast file search
+ */
+
+import { fastIndexer } from './indexer/fileIndexer';
+import { aiService } from './indexer/aiService';
 import type { FileEntry } from '../types';
 
 export interface SearchResult {
   entry: FileEntry;
   score: number;
+  source: 'index' | 'ai';
 }
 
 export interface SearchOptions {
-  fuzzy?: boolean;
-  extension?: string;
+  extensions?: string[];
   maxResults?: number;
-  caseSensitive?: boolean;
+  fuzzy?: boolean;
 }
 
 class SearchService {
-  private fuse: Fuse<FileEntry> | null = null;
-  private entries: FileEntry[] = [];
-  private indexedPaths: Set<string> = new Set();
+  private lastIndexedPath = '';
 
-  async indexDirectory(path: string, entries: FileEntry[]): Promise<void> {
-    // Remove old entries from this path
-    this.entries = this.entries.filter(e => !e.path.startsWith(path));
+  async indexDirectory(path: string): Promise<number> {
+    const count = await fastIndexer.indexDirectory(path, 5);
+    this.lastIndexedPath = path;
+    return count;
+  }
+
+  search(query: string, options: SearchOptions = {}): SearchResult[] {
+    const { extensions = [], maxResults = 50, fuzzy = true } = options;
+
+    const files = fastIndexer.search(query, { extensions, maxResults, fuzzy });
+
+    return files.map(file => ({
+      entry: {
+        name: file.name,
+        path: file.path,
+        isDirectory: file.isDirectory,
+        isFile: !file.isDirectory,
+        size: file.size,
+        modified: file.modified,
+      },
+      score: 0,
+      source: 'index' as const,
+    }));
+  }
+
+  prefixSearch(prefix: string, maxResults = 10): SearchResult[] {
+    const files = fastIndexer.prefixSearch(prefix, maxResults);
     
-    // Add new entries
-    this.entries.push(...entries);
+    return files.map(file => ({
+      entry: {
+        name: file.name,
+        path: file.path,
+        isDirectory: file.isDirectory,
+        isFile: !file.isDirectory,
+        size: file.size,
+        modified: file.modified,
+      },
+      score: 1,
+      source: 'index' as const,
+    }));
+  }
+
+  getStats() {
+    return fastIndexer.getStats();
+  }
+
+  clear() {
+    fastIndexer.clear();
+    this.lastIndexedPath = '';
+  }
+
+  async autoIndex(path: string): Promise<void> {
+    if (path !== this.lastIndexedPath) {
+      await this.indexDirectory(path);
+    }
+  }
+
+  async searchWithAI(query: string, options: SearchOptions = {}): Promise<SearchResult[]> {
+    const fastResults = this.search(query, options);
     
-    this.indexedPaths.add(path);
+    if (aiService.isAvailable()) {
+      try {
+        const interpretation = await aiService.chat([
+          { role: 'system', content: 'You are a file search assistant.' },
+          { role: 'user', content: `Suggest keywords for: "${query}"` },
+        ]);
+        
+        if (interpretation) {
+          const extraResults = this.search(interpretation, options);
+          const allResults = [...fastResults];
+          
+          for (const result of extraResults) {
+            if (!allResults.some(r => r.entry.path === result.entry.path)) {
+              allResults.push({ ...result, source: 'ai' as const });
+            }
+          }
+          
+          return allResults.slice(0, options.maxResults || 50);
+        }
+      } catch {
+        // AI failed, return fast results
+      }
+    }
     
-    // Rebuild index
-    this.fuse = new Fuse(this.entries, {
-      keys: ['name', 'path'],
-      threshold: 0.4,
-      includeScore: true,
-      minMatchCharLength: 2,
-      ignoreLocation: true,
-    });
-  }
-
-  async search(query: string, options: SearchOptions = {}): Promise<SearchResult[]> {
-    const {
-      fuzzy = true,
-      extension,
-      maxResults = 50,
-    } = options;
-
-    if (!query.trim()) {
-      return [];
-    }
-
-    let results: SearchResult[] = [];
-
-    if (fuzzy && this.fuse) {
-      // Fuzzy search
-      const fuseResults = this.fuse.search(query);
-      results = fuseResults.slice(0, maxResults).map(r => ({
-        entry: r.item,
-        score: r.score || 0,
-      }));
-    } else {
-      // Simple substring search
-      const lowerQuery = query.toLowerCase();
-      results = this.entries
-        .filter(e => e.name.toLowerCase().includes(lowerQuery))
-        .slice(0, maxResults)
-        .map(entry => ({
-          entry,
-          score: 0,
-        }));
-    }
-
-    // Filter by extension if specified
-    if (extension) {
-      const ext = extension.startsWith('.') ? extension.toLowerCase() : `.${extension.toLowerCase()}`;
-      results = results.filter(r => 
-        r.entry.name.toLowerCase().endsWith(ext)
-      );
-    }
-
-    return results;
-  }
-
-  clearIndex(): void {
-    this.entries = [];
-    this.indexedPaths.clear();
-    this.fuse = null;
-  }
-
-  getIndexedPaths(): string[] {
-    return Array.from(this.indexedPaths);
-  }
-
-  getEntryCount(): number {
-    return this.entries.length;
+    return fastResults;
   }
 }
 
-// Singleton instance
 export const searchService = new SearchService();
+
+export { fastIndexer } from './indexer/fileIndexer';
+export { aiService } from './indexer/aiService';
 
 export function debounce<T extends (...args: any[]) => void>(
   func: T,
   wait: number
 ): (...args: Parameters<T>) => void {
   let timeout: ReturnType<typeof setTimeout> | null = null;
-  
   return (...args: Parameters<T>) => {
-    if (timeout) {
-      clearTimeout(timeout);
-    }
-    timeout = setTimeout(() => {
-      func(...args);
-    }, wait);
+    if (timeout) clearTimeout(timeout);
+    timeout = setTimeout(() => func(...args), wait);
   };
 }
