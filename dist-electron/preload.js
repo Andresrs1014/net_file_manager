@@ -30,6 +30,8 @@ const electronAPI = {
     writeConfig: (config) => electron_1.ipcRenderer.invoke('config:write', config),
     // Terminal
     executeCommand: (cmd, cwd) => electron_1.ipcRenderer.invoke('terminal:execute', cmd, cwd),
+    // AI - Ollama chat (bypasses CORS via main process)
+    chatWithOllama: (model, messages) => electron_1.ipcRenderer.invoke('ollama:chat', model, messages),
 };
 electron_1.contextBridge.exposeInMainWorld('electronAPI', electronAPI);
 //# sourceMappingURL=preload.js.map

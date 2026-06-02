@@ -197,6 +197,27 @@ ipcMain.handle('terminal:execute', async (_, cmd: string, cwd: string) => {
   });
 });
 
+// Ollama chat handler (bypasses CORS since main process has no restrictions)
+ipcMain.handle('ollama:chat', async (_, model: string, messages: any[]) => {
+  try {
+    const response = await fetch('http://localhost:11434/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, messages, stream: false }),
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({})) as { error?: string };
+      throw new Error(errorData.error || `HTTP ${response.status}`);
+    }
+    
+    const data = await response.json() as { message?: { content?: string } };
+    return { success: true, content: data.message?.content || '' };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+});
+
 // App lifecycle
 app.whenReady().then(() => {
   createWindow();

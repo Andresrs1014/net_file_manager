@@ -35,6 +35,9 @@ const electronAPI = {
 
   // Terminal
   executeCommand: (cmd: string, cwd: string) => ipcRenderer.invoke('terminal:execute', cmd, cwd),
+
+  // AI - Ollama chat (bypasses CORS via main process)
+  chatWithOllama: (model: string, messages: any[]) => ipcRenderer.invoke('ollama:chat', model, messages),
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);

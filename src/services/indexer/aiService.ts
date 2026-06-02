@@ -2,7 +2,6 @@
  * AI Service - Unified interface for Ollama and Claude API
  */
 /// <reference types="vite/client" />
-import { OLLAMA_DEFAULT_PORT } from './aiConfig';
 
 export interface Message {
   role: 'system' | 'user' | 'assistant';
@@ -46,21 +45,23 @@ class AIService {
     const model = this.config?.model || 'qwen2.5-coder:7b';
     
     try {
-      // Use relative URL to bypass CORS via Vite proxy in dev mode
-      // In production (Electron), we go direct since it's same-origin
-      const isDev = import.meta.env.DEV;
-      const url = isDev 
-        ? '/api/ollama/chat'  // Proxied through Vite to avoid CORS
-        : `http://localhost:${OLLAMA_DEFAULT_PORT}/api/chat`;
+      // Use Electron main process to bypass CORS
+      if (typeof window !== 'undefined' && (window as any).electronAPI?.chatWithOllama) {
+        const result = await (window as any).electronAPI.chatWithOllama(model, messages);
+        if (!result.success) {
+          throw new Error(result.error || 'Ollama error');
+        }
+        return result.content;
+      }
       
-      const response = await fetch(url, {
+      // Fallback to direct fetch (dev mode with Vite proxy)
+      const response = await fetch('/api/ollama/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model, messages, stream: false }),
       });
       
       if (!response.ok) {
-        // Try to get error message from response
         let errorMsg = `Ollama error: ${response.statusText}`;
         try {
           const errorData = await response.json();
