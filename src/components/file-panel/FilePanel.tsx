@@ -239,17 +239,25 @@ export function FilePanel({
 
   return (
     <div
-      className={`flex-1 flex flex-col min-w-0 ${
-        isActive ? 'ring-1 ring-[#3b82f6]/50' : ''
+      className={`flex-1 flex flex-col min-w-0 transition-all ${
+        isActive 
+          ? 'ring-1 ring-[#3b82f6]/50 shadow-[inset_0_0_20px_rgba(59,130,246,0.03)]' 
+          : ''
       }`}
       onClick={onActivate}
     >
       {/* Header */}
-      <div className="h-8 bg-[#262626] flex items-center px-3 border-b border-[#404040] gap-1">
-        <span className="text-xs font-medium text-[#a3a3a3] uppercase">
+      <div className={`h-9 flex items-center px-4 border-b gap-2 transition-colors ${
+        isActive ? 'bg-[#2a2a2a] border-[#505050]' : 'bg-[#262626] border-[#404040]'
+      }`}>
+        <span className={`text-xs font-medium uppercase ${
+          isActive ? 'text-[#e5e5e5]' : 'text-[#a3a3a3]'
+        }`}>
           Panel {id === 'left' ? 'izquierdo' : 'derecho'}
         </span>
-        <div className="flex-1" />
+        {isActive && (
+          <span className="ml-2 w-2 h-2 bg-[#3b82f6] rounded-full animate-pulse" />
+        )}
         <button
           onClick={() => setShowCreateDialog('folder')}
           className="px-2 py-0.5 text-xs text-[#a3a3a3] hover:text-[#e5e5e5] hover:bg-[#333] rounded transition-colors"

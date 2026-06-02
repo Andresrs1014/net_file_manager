@@ -19,9 +19,35 @@ function App() {
   const [aiVisible, setAiVisible] = useState(false);
 
   useEffect(() => {
+    // Development fallback: use mock if electronAPI not available
     if (window.electronAPI) {
       setReady(true);
       loadConfig();
+    } else {
+      // Mock electronAPI for dev without Electron
+      (window as any).electronAPI = {
+        readDirectory: async () => [],
+        readConfig: async () => ({ theme: 'dark', lastLeftPath: 'C:\\', lastRightPath: 'C:\\', favorites: [], terminalVisible: false }),
+        writeConfig: async () => {},
+        showOpenFolderDialog: async () => 'C:\\',
+        openFolderDialog: async () => 'C:\\',
+        openFileDialog: async () => null,
+        saveFileDialog: async () => null,
+        deleteFile: async () => {},
+        renameFile: async () => {},
+        copyFile: async () => {},
+        moveFile: async () => {},
+        createDirectory: async () => {},
+        showMessage: async () => 0,
+        readFile: async () => '',
+        writeFile: async () => {},
+        getPath: async () => 'C:\\',
+        minimize: () => {},
+        maximize: () => {},
+        close: () => {},
+        isMaximized: async () => false,
+      };
+      setReady(true);
     }
   }, []);
 
@@ -229,7 +255,7 @@ function App() {
       </div>
 
       {/* Status bar */}
-      <footer className="h-6 bg-[#262626] flex items-center px-4 text-xs text-[#737373] border-t border-[#404040]">
+      <footer className="h-7 bg-[#262626] flex items-center px-4 text-xs text-[#737373] border-t border-[#404040]">
         <span>NetVault listo</span>
         <div className="flex-1" />
         {clipboard && (

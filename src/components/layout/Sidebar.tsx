@@ -24,8 +24,8 @@ export function Sidebar({ favorites, onNavigate, onToggle, isOpen }: SidebarProp
 
   const quickAccessItems = [
     { icon: '💻', path: 'C:\\', label: 'Este equipo' },
-    { icon: '📥', path: 'C:\\Users\\' + (process.env.USERNAME || 'User') + '\\Downloads', label: 'Descargas' },
-    { icon: '📁', path: 'C:\\Users\\' + (process.env.USERNAME || 'User') + '\\Documents', label: 'Documentos' },
+    { icon: '📥', path: 'C:\\Users\\User\\Downloads', label: 'Descargas' },
+    { icon: '📁', path: 'C:\\Users\\User\\Documents', label: 'Documentos' },
     { icon: '🖥️', path: 'D:\\', label: 'Disco D:' },
   ];
 
@@ -71,9 +71,9 @@ export function Sidebar({ favorites, onNavigate, onToggle, isOpen }: SidebarProp
       <div className="p-2 flex-1 overflow-auto">
         <div className="text-xs text-[#737373] uppercase mb-2 px-2">Favoritos</div>
         {favorites.length === 0 ? (
-          <div className="px-2 py-4 text-center text-[#737373] text-xs">
+          <div className="px-2 py-4 text-center text-[#606060] text-xs">
             <p>Sin favoritos</p>
-            <p className="mt-1">Usa el menú contextual para agregar</p>
+            <p className="mt-1 text-[#505050]">Usa el menú contextual para agregar</p>
           </div>
         ) : (
           <div className="space-y-1">

@@ -96,7 +96,7 @@ export function SearchBar({ onResultSelect, placeholder = 'Buscar archivos...' }
   };
 
   return (
-    <div className="relative flex-1 max-w-md">
+    <div className="relative flex-1 max-w-lg">
       <div className="flex items-center bg-[#1a1a1a] border border-[#404040] rounded focus-within:border-[#3b82f6] transition-colors">
         <span className="pl-3 text-[#737373]">🔍</span>
         <input
@@ -113,9 +113,25 @@ export function SearchBar({ onResultSelect, placeholder = 'Buscar archivos...' }
           className="flex-1 px-3 py-2 bg-transparent text-[#e5e5e5] outline-none text-sm placeholder-[#737373]"
         />
         
+        {extensionFilter && (
+          <span className="px-2 py-1 text-xs bg-[#333] text-[#a3a3a3] rounded mx-1">
+            {extensionFilter}
+          </span>
+        )}
+        
+        <button
+          onClick={() => setExtensionFilter(extensionFilter ? '' : '.')}
+          className={`px-2 py-1 text-xs border-l border-[#404040] transition-colors mx-0.5 ${
+            extensionFilter ? 'text-[#3b82f6]' : 'text-[#737373] hover:text-[#e5e5e5]'
+          }`}
+          title="Filtrar por extensión"
+        >
+          .ext
+        </button>
+
         <button
           onClick={() => setFuzzyEnabled(!fuzzyEnabled)}
-          className={`px-2 py-1 text-xs border-l border-[#404040] transition-colors ${
+          className={`px-2 py-1 text-xs border-l border-[#404040] transition-colors mx-0.5 ${
             fuzzyEnabled ? 'text-[#3b82f6]' : 'text-[#737373] hover:text-[#e5e5e5]'
           }`}
           title="Búsqueda difusa"
@@ -124,7 +140,7 @@ export function SearchBar({ onResultSelect, placeholder = 'Buscar archivos...' }
         </button>
 
         {isSearching && (
-          <div className="px-3">
+          <div className="px-3 py-1">
             <div className="w-4 h-4 border-2 border-[#3b82f6] border-t-transparent rounded-full animate-spin" />
           </div>
         )}
@@ -136,32 +152,21 @@ export function SearchBar({ onResultSelect, placeholder = 'Buscar archivos...' }
               setResults([]);
               inputRef.current?.focus();
             }}
-            className="px-2 text-[#737373] hover:text-[#e5e5e5] transition-colors"
+            className="px-2 py-1 text-[#737373] hover:text-[#e5e5e5] transition-colors mx-0.5"
           >
             ×
           </button>
         )}
-      </div>
-
-      <div className="flex items-center mt-1 gap-2">
-        <span className="text-xs text-[#737373]">Ext:</span>
-        <input
-          type="text"
-          value={extensionFilter}
-          onChange={(e) => setExtensionFilter(e.target.value)}
-          placeholder=".pdf, .ts"
-          className="px-2 py-0.5 text-xs bg-[#1a1a1a] border border-[#404040] rounded text-[#a3a3a3] outline-none focus:border-[#3b82f6] w-24"
-        />
         
         {indexStatus && (
-          <span className="text-xs text-[#737373]" title={`${indexStatus.files} archivos`}>
+          <span className="px-2 py-1 text-xs text-[#737373] border-l border-[#404040] mx-0.5" title={`${indexStatus.files} archivos`}>
             📇 {indexStatus.files}
           </span>
         )}
         
         <button
           onClick={handleReindex}
-          className="text-xs text-[#737373] hover:text-[#e5e5e5] transition-colors ml-2"
+          className="px-2 py-1 text-[#737373] hover:text-[#e5e5e5] transition-colors mx-1"
           title="Reindexar"
         >
           ↻
