@@ -4,6 +4,7 @@ import { Sidebar } from './components/layout/Sidebar';
 import { FilePanel } from './components/file-panel/FilePanel';
 import { Terminal } from './components/terminal/Terminal';
 import { fileService, getConfig as getAppConfig, setConfig as setAppConfig } from './services/fileService';
+import type { ClipboardContent } from './types';
 
 function App() {
   const [ready, setReady] = useState(false);
@@ -13,12 +14,50 @@ function App() {
   const [terminalVisible, setTerminalVisible] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [favorites, setFavorites] = useState<string[]>([]);
+  const [clipboard, setClipboard] = useState<ClipboardContent | null>(null);
 
   useEffect(() => {
     if (window.electronAPI) {
       setReady(true);
       loadConfig();
     }
+  }, []);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey) {
+        switch (e.key.toLowerCase()) {
+          case 'c':
+            // Copy handled in FilePanel
+            break;
+          case 'x':
+            // Cut handled in FilePanel
+            break;
+          case 'v':
+            // Paste handled in FilePanel
+            break;
+          case 'o':
+            e.preventDefault();
+            handleOpenFolder();
+            break;
+          case 'a':
+            e.preventDefault();
+            // Select all handled in FilePanel
+            break;
+        }
+      } else if (e.key === 'Delete') {
+        // Delete handled in FilePanel
+      } else if (e.key === 'F2') {
+        // Rename handled in FilePanel
+      } else if (e.key === '`') {
+        e.preventDefault();
+        setTerminalVisible(prev => !prev);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
   const loadConfig = async () => {
@@ -77,6 +116,8 @@ function App() {
     }
   };
 
+  const currentPath = activePanel === 'left' ? leftPath : rightPath;
+
   if (!ready) {
     return (
       <div className="h-screen flex items-center justify-center bg-[#1a1a1a] text-gray-400">
@@ -96,6 +137,8 @@ function App() {
         onToggleTerminal={handleToggleTerminal}
         onToggleTheme={handleToggleTheme}
         terminalVisible={terminalVisible}
+        clipboard={clipboard}
+        onClipboardClear={() => setClipboard(null)}
       />
 
       {/* Main content */}
@@ -117,6 +160,8 @@ function App() {
             onPathChange={handleLeftPathChange}
             isActive={activePanel === 'left'}
             onActivate={() => setActivePanel('left')}
+            clipboard={clipboard}
+            onClipboardChange={setClipboard}
           />
 
           {/* Divider */}
@@ -125,7 +170,7 @@ function App() {
           {/* Right panel or Terminal */}
           {terminalVisible ? (
             <Terminal
-              initialCwd={leftPath}
+              initialCwd={currentPath}
               onClose={() => setTerminalVisible(false)}
             />
           ) : (
@@ -135,6 +180,8 @@ function App() {
               onPathChange={handleRightPathChange}
               isActive={activePanel === 'right'}
               onActivate={() => setActivePanel('right')}
+              clipboard={clipboard}
+              onClipboardChange={setClipboard}
             />
           )}
         </div>
@@ -144,6 +191,11 @@ function App() {
       <footer className="h-6 bg-[#262626] flex items-center px-4 text-xs text-[#737373] border-t border-[#404040]">
         <span>NetVault listo</span>
         <div className="flex-1" />
+        {clipboard && (
+          <span className="mr-4">
+            {clipboard.action === 'copy' ? '📋 Copiar' : '✂️ Cortar'}: {clipboard.paths.length} archivo(s)
+          </span>
+        )}
         <span>{activePanel === 'left' ? 'Panel izquierdo' : 'Panel derecho'} activo</span>
       </footer>
     </div>

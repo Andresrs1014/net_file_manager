@@ -1,11 +1,22 @@
+import type { ClipboardContent } from '../../types';
+
 interface ToolbarProps {
   onOpenFolder: () => void;
   onToggleTerminal: () => void;
   onToggleTheme: () => void;
   terminalVisible: boolean;
+  clipboard: ClipboardContent | null;
+  onClipboardClear: () => void;
 }
 
-export function Toolbar({ onOpenFolder, onToggleTerminal, onToggleTheme, terminalVisible }: ToolbarProps) {
+export function Toolbar({
+  onOpenFolder,
+  onToggleTerminal,
+  onToggleTheme,
+  terminalVisible,
+  clipboard,
+  onClipboardClear,
+}: ToolbarProps) {
   return (
     <header className="h-12 bg-[#262626] flex items-center px-4 gap-2 border-b border-[#404040]">
       {/* Logo/Título */}
@@ -40,6 +51,22 @@ export function Toolbar({ onOpenFolder, onToggleTerminal, onToggleTheme, termina
       </button>
 
       <div className="flex-1" />
+
+      {/* Clipboard status */}
+      {clipboard && (
+        <div className="flex items-center gap-2 px-3 py-1 bg-[#1a1a1a] rounded border border-[#404040]">
+          <span className="text-sm text-[#a3a3a3]">
+            {clipboard.action === 'copy' ? '📋' : '✂️'} {clipboard.paths.length} archivo(s)
+          </span>
+          <button
+            onClick={onClipboardClear}
+            className="text-xs text-[#737373] hover:text-[#ef4444] transition-colors"
+            title="Limpiar portapapeles"
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {/* Acciones derechas */}
       <button

@@ -13,6 +13,10 @@ const electronAPI = {
   readFile: (path: string) => ipcRenderer.invoke('fs:readFile', path),
   openFile: (path: string) => ipcRenderer.invoke('fs:open', path),
   fileExists: (path: string) => ipcRenderer.invoke('fs:exists', path),
+  renameFile: (oldPath: string, newName: string) => ipcRenderer.invoke('fs:rename', oldPath, newName),
+  showInFolder: (path: string) => ipcRenderer.invoke('fs:showInFolder', path),
+  getClipboard: () => ipcRenderer.invoke('fs:getClipboard'),
+  setClipboard: (text: string) => ipcRenderer.invoke('fs:setClipboard', text),
 
   // Diálogos nativos
   openFolderDialog: () => ipcRenderer.invoke('dialog:openFolder'),
@@ -27,6 +31,9 @@ const electronAPI = {
   getConfigPath: () => ipcRenderer.invoke('config:getPath'),
   readConfig: () => ipcRenderer.invoke('config:read'),
   writeConfig: (config: object) => ipcRenderer.invoke('config:write', config),
+
+  // Terminal
+  executeCommand: (cmd: string, cwd: string) => ipcRenderer.invoke('terminal:execute', cmd, cwd),
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);
