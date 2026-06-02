@@ -1,6 +1,7 @@
 /**
  * AI Service - Unified interface for Ollama and Claude API
  */
+/// <reference types="vite/client" />
 import { OLLAMA_DEFAULT_PORT } from './aiConfig';
 
 export interface Message {
@@ -45,7 +46,14 @@ class AIService {
     const model = this.config?.model || 'qwen2.5-coder:7b';
     
     try {
-      const response = await fetch(`http://localhost:${OLLAMA_DEFAULT_PORT}/api/chat`, {
+      // Use relative URL to bypass CORS via Vite proxy in dev mode
+      // In production (Electron), we go direct since it's same-origin
+      const isDev = import.meta.env.DEV;
+      const url = isDev 
+        ? '/api/ollama/chat'  // Proxied through Vite to avoid CORS
+        : `http://localhost:${OLLAMA_DEFAULT_PORT}/api/chat`;
+      
+      const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model, messages, stream: false }),
