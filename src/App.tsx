@@ -6,6 +6,7 @@ import { Terminal } from './components/terminal/Terminal';
 import { AIChat } from './components/ai/AIChat';
 import { Scaffolder } from './components/ai/Scaffolder';
 import { DocumentViewer } from './components/document/DocumentViewer';
+import { GraphPanel } from './components/graph/GraphPanel';
 import { fileService, getConfig as getAppConfig, setConfig as setAppConfig } from './services/fileService';
 import { isSupported } from './services/documentService';
 import type { ClipboardContent } from './types';
@@ -22,6 +23,7 @@ function App() {
   const [aiVisible, setAiVisible] = useState(false);
   const [showScaffolder, setShowScaffolder] = useState(false);
   const [documentViewerPath, setDocumentViewerPath] = useState<string | null>(null);
+  const [showGraphPanel, setShowGraphPanel] = useState(false);
 
   // Handle file double-click (opens document viewer for supported files)
   const handleFileOpen = (filePath: string) => {
@@ -210,6 +212,7 @@ function App() {
         onToggleAI={handleToggleAI}
         aiVisible={aiVisible}
         currentPath={currentPath}
+        onOpenGraph={() => setShowGraphPanel(true)}
       />
 
       {/* Main content */}
@@ -302,6 +305,13 @@ function App() {
           <DocumentViewer
             filePath={documentViewerPath}
             onClose={() => setDocumentViewerPath(null)}
+          />
+        )}
+
+        {/* Graph Viewer Modal */}
+        {showGraphPanel && (
+          <GraphPanel
+            onClose={() => setShowGraphPanel(false)}
           />
         )}
       </div>

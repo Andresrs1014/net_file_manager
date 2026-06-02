@@ -13,6 +13,7 @@ interface ToolbarProps {
   onToggleAI?: () => void;
   aiVisible?: boolean;
   currentPath?: string;
+  onOpenGraph?: () => void;
 }
 
 interface SearchResult {
@@ -32,6 +33,7 @@ export function Toolbar({
   onToggleAI,
   aiVisible,
   currentPath,
+  onOpenGraph,
 }: ToolbarProps) {
   const handleSearchSelect = async (result: SearchResult) => {
     const dirPath = result.entry.isDirectory 
@@ -113,6 +115,15 @@ export function Toolbar({
       >
         <span>🧱</span>
         <span>Nuevo</span>
+      </button>
+
+      <button
+        onClick={onOpenGraph}
+        className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-[#e5e5e5] hover:bg-[#333] rounded transition-colors shrink-0"
+        title="Ver grafo de conocimiento"
+      >
+        <span>🕸️</span>
+        <span>Grafo</span>
       </button>
 
       {/* Search bar */}
