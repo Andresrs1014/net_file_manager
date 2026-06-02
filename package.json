@@ -1,0 +1,80 @@
+{
+  "name": "netvault",
+  "version": "1.0.0",
+  "description": "Gestor de archivos con IA para análisis de procedimientos y entrenamiento ZYMO",
+  "main": "dist-electron/main.js",
+  "author": "Andrés Quintero",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build && npm run build:electron",
+    "build:electron": "tsc -p tsconfig.electron.json",
+    "electron:dev": "concurrently -k \"vite\" \"wait-on tcp:5173 && electron .\"",
+    "electron:build": "npm run build && electron-builder --win",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "sql.js": "^1.11.0",
+    "d3": "^7.9.0",
+    "mammoth": "^1.8.0",
+    "pdfjs-dist": "^4.7.76",
+    "jszip": "^3.10.1",
+    "file-saver": "^2.0.5",
+    "mermaid": "^11.4.0",
+    "js-yaml": "^4.1.0",
+    "@anthropic-ai/sdk": "^0.52.0",
+    "uuid": "^10.0.0"
+  },
+  "devDependencies": {
+    "@types/d3": "^7.4.3",
+    "@types/file-saver": "^2.0.7",
+    "@types/node": "^22.7.7",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.1",
+    "@types/uuid": "^10.0.0",
+    "@vitejs/plugin-react": "^4.3.2",
+    "autoprefixer": "^10.4.20",
+    "concurrently": "^9.0.1",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.14",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10",
+    "wait-on": "^8.0.1"
+  },
+  "build": {
+    "appId": "com.netvault.app",
+    "productName": "NetVault",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "NetVault"
+    }
+  }
+}
