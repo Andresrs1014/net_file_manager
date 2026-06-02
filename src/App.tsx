@@ -4,6 +4,7 @@ import { Sidebar } from './components/layout/Sidebar';
 import { FilePanel } from './components/file-panel/FilePanel';
 import { Terminal } from './components/terminal/Terminal';
 import { AIChat } from './components/ai/AIChat';
+import { Scaffolder } from './components/ai/Scaffolder';
 import { fileService, getConfig as getAppConfig, setConfig as setAppConfig } from './services/fileService';
 import type { ClipboardContent } from './types';
 
@@ -17,6 +18,7 @@ function App() {
   const [favorites, setFavorites] = useState<string[]>([]);
   const [clipboard, setClipboard] = useState<ClipboardContent | null>(null);
   const [aiVisible, setAiVisible] = useState(false);
+  const [showScaffolder, setShowScaffolder] = useState(false);
 
   useEffect(() => {
     // Development fallback: use mock if electronAPI not available
@@ -232,6 +234,7 @@ function App() {
               <AIChat
                 projectPath={currentPath}
                 onClose={() => setAiVisible(false)}
+                onOpenScaffolder={() => setShowScaffolder(true)}
               />
             </div>
           ) : terminalVisible ? (
@@ -265,6 +268,22 @@ function App() {
         )}
         <span>{activePanel === 'left' ? 'Panel izquierdo' : 'Panel derecho'} activo</span>
       </footer>
+
+      {/* Scaffolder Modal */}
+      {showScaffolder && (
+        <Scaffolder
+          destinationPath={currentPath}
+          onClose={() => setShowScaffolder(false)}
+          onProjectCreated={(path) => {
+            // Navigate to the newly created project
+            if (activePanel === 'left') {
+              handleLeftPathChange(path);
+            } else {
+              handleRightPathChange(path);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

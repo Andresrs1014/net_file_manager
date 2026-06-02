@@ -106,6 +106,15 @@ export function Toolbar({
         <span>AI</span>
       </button>
 
+      <button
+        onClick={() => {/* Scaffolder opens from AI panel */}}
+        className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-[#e5e5e5] hover:bg-[#333] rounded transition-colors shrink-0"
+        title="Crear nuevo proyecto"
+      >
+        <span>🧱</span>
+        <span>Nuevo</span>
+      </button>
+
       {/* Search bar */}
       <SearchBar
         onResultSelect={handleSearchSelect}

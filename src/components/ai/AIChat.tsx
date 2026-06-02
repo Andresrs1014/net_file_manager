@@ -11,9 +11,10 @@ export interface ChatMessage {
 interface AIChatProps {
   projectPath?: string;
   onClose: () => void;
+  onOpenScaffolder?: () => void;
 }
 
-export function AIChat({ projectPath, onClose }: AIChatProps) {
+export function AIChat({ projectPath, onClose, onOpenScaffolder }: AIChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 'welcome',
@@ -155,6 +156,13 @@ export function AIChat({ projectPath, onClose }: AIChatProps) {
           </span>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={onOpenScaffolder}
+            className="p-1.5 text-[#737373] hover:text-[#e5e5e5] hover:bg-[#333] rounded transition-colors"
+            title="Crear proyecto (Scaffolder)"
+          >
+            🧱
+          </button>
           <button
             onClick={clearChat}
             className="p-1.5 text-[#737373] hover:text-[#e5e5e5] hover:bg-[#333] rounded transition-colors"
