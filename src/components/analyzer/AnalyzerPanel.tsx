@@ -1,5 +1,6 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { aiService, type Message } from '../../services/indexer/aiService';
+import { useAIConfig, getDefaultOllamaModel } from '../../services/indexer/aiConfig';
 
 interface AnalysisResult {
   entities: Entity[];
@@ -25,12 +26,25 @@ interface Procedure {
 }
 
 export function AnalyzerPanel({ onClose }: { onClose: () => void }) {
+  const { config, isLoaded } = useAIConfig();
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [progress, setProgress] = useState('');
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [documentContent, setDocumentContent] = useState<string>('');
+  const [isAIReady, setIsAIReady] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Initialize AI on mount
+  useEffect(() => {
+    if (isLoaded && config) {
+      aiService.initialize({
+        provider: config.provider,
+        model: config.model || getDefaultOllamaModel(),
+        apiKey: config.apiKey,
+      }).then(() => setIsAIReady(true)).catch(() => setIsAIReady(false));
+    }
+  }, [isLoaded, config]);
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -61,7 +75,7 @@ export function AnalyzerPanel({ onClose }: { onClose: () => void }) {
       return;
     }
 
-    if (!aiService.isAvailable()) {
+    if (!isAIReady) {
       setError('AI no está configurado. Configura Ollama o Claude en AI Settings.');
       return;
     }

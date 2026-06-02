@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { aiService } from '../../services/indexer/aiService';
+import { useAIConfig, getDefaultOllamaModel } from '../../services/indexer/aiConfig';
 
 export interface ChatMessage {
   id: string;
@@ -15,6 +16,7 @@ interface AIChatProps {
 }
 
 export function AIChat({ projectPath, onClose, onOpenScaffolder }: AIChatProps) {
+  const { config, isLoaded } = useAIConfig();
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 'welcome',
@@ -32,8 +34,10 @@ export function AIChat({ projectPath, onClose, onOpenScaffolder }: AIChatProps) 
 
   // Check AI availability on mount
   useEffect(() => {
-    checkAIAvailability();
-  }, []);
+    if (isLoaded) {
+      checkAIAvailability();
+    }
+  }, [isLoaded, config]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -43,9 +47,11 @@ export function AIChat({ projectPath, onClose, onOpenScaffolder }: AIChatProps) 
   const checkAIAvailability = async () => {
     setAiStatus('checking');
     try {
+      // Use config from useAIConfig hook
       await aiService.initialize({
-        provider: 'ollama',
-        model: 'qwen2.5-coder:7b',
+        provider: config.provider,
+        model: config.model || getDefaultOllamaModel(),
+        apiKey: config.apiKey,
       });
       setAiStatus('ready');
     } catch {
