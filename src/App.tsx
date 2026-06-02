@@ -45,6 +45,12 @@ function App() {
             e.preventDefault();
             // Select all handled in FilePanel
             break;
+          case 'f':
+            e.preventDefault();
+            // Focus search - will be handled by SearchBar component
+            const searchInput = document.querySelector('input[placeholder*="Buscar"]') as HTMLInputElement;
+            searchInput?.focus();
+            break;
         }
       } else if (e.key === 'Delete') {
         // Delete handled in FilePanel
@@ -125,6 +131,14 @@ function App() {
     }
   };
 
+  const handleNavigateToPath = (path: string) => {
+    if (activePanel === 'left') {
+      handleLeftPathChange(path);
+    } else {
+      handleRightPathChange(path);
+    }
+  };
+
   const currentPath = activePanel === 'left' ? leftPath : rightPath;
 
   if (!ready) {
@@ -148,6 +162,8 @@ function App() {
         terminalVisible={terminalVisible}
         clipboard={clipboard}
         onClipboardClear={() => setClipboard(null)}
+        onNavigateToPath={handleNavigateToPath}
+        currentPath={currentPath}
       />
 
       {/* Main content */}
