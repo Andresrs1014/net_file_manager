@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Optional
 
 
 # ── Definición de plantillas ─────────────────────────────────────────────────
@@ -491,7 +492,7 @@ def scaffold(
     template_name: str,
     project_name: str,
     destination: str,
-    options: list[str] = None,
+    options: Optional[list[str]] = None,
 ) -> tuple[bool, str, list[str]]:
     """
     Crea la estructura del proyecto en destination/project_name.
