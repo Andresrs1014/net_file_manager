@@ -11,6 +11,7 @@ const electronAPI = {
   createFolder: (path: string) => ipcRenderer.invoke('fs:mkdir', path),
   createFile: (path: string, content: string) => ipcRenderer.invoke('fs:writeFile', path, content),
   readFile: (path: string) => ipcRenderer.invoke('fs:readFile', path),
+  writeFile: (path: string, content: string) => ipcRenderer.invoke('fs:writeFile', path, content),
   openFile: (path: string) => ipcRenderer.invoke('fs:open', path),
   fileExists: (path: string) => ipcRenderer.invoke('fs:exists', path),
   renameFile: (oldPath: string, newName: string) => ipcRenderer.invoke('fs:rename', oldPath, newName),

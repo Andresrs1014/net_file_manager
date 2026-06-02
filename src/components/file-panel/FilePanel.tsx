@@ -13,6 +13,7 @@ interface FilePanelProps {
   onActivate: () => void;
   clipboard: ClipboardContent | null;
   onClipboardChange: (clipboard: ClipboardContent | null) => void;
+  onFileOpen?: (filePath: string) => void;
 }
 
 export function FilePanel({
@@ -23,6 +24,7 @@ export function FilePanel({
   onActivate,
   clipboard,
   onClipboardChange,
+  onFileOpen,
 }: FilePanelProps) {
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -112,6 +114,8 @@ export function FilePanel({
   const handleDoubleClick = async (entry: FileEntry) => {
     if (entry.isDirectory) {
       handleNavigate(entry.path);
+    } else if (onFileOpen) {
+      onFileOpen(entry.path);
     } else {
       await fileService.openFile(entry.path);
     }

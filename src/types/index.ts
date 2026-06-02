@@ -70,7 +70,8 @@ export interface ElectronAPI {
   deleteFile: (path: string, permanent: boolean) => Promise<void>;
   createFolder: (path: string) => Promise<void>;
   createFile: (path: string, content: string) => Promise<void>;
-  readFile: (path: string) => Promise<Buffer>;
+  writeFile: (path: string, content: string) => Promise<void>;
+  readFile: (path: string) => Promise<string | Uint8Array>;
   openFile: (path: string) => Promise<void>;
   fileExists: (path: string) => Promise<boolean>;
   renameFile: (oldPath: string, newName: string) => Promise<string>;
