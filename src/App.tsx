@@ -89,6 +89,15 @@ function App() {
     savePath('right', path);
   };
 
+  const handleTerminalCwdChange = (newCwd: string) => {
+    // Update the active panel's path when terminal changes directory
+    if (activePanel === 'left') {
+      handleLeftPathChange(newCwd);
+    } else {
+      handleRightPathChange(newCwd);
+    }
+  };
+
   const handleOpenFolder = async () => {
     const folderPath = await fileService.showOpenFolderDialog();
     if (folderPath) {
@@ -172,6 +181,7 @@ function App() {
             <Terminal
               initialCwd={currentPath}
               onClose={() => setTerminalVisible(false)}
+              onCwdChange={handleTerminalCwdChange}
             />
           ) : (
             <FilePanel
