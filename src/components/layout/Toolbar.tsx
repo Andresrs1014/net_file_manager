@@ -14,6 +14,7 @@ interface ToolbarProps {
   aiVisible?: boolean;
   currentPath?: string;
   onOpenGraph?: () => void;
+  onOpenFlowchart?: () => void;
 }
 
 interface SearchResult {
@@ -34,6 +35,7 @@ export function Toolbar({
   aiVisible,
   currentPath,
   onOpenGraph,
+  onOpenFlowchart,
 }: ToolbarProps) {
   const handleSearchSelect = async (result: SearchResult) => {
     const dirPath = result.entry.isDirectory 
@@ -124,6 +126,15 @@ export function Toolbar({
       >
         <span>🕸️</span>
         <span>Grafo</span>
+      </button>
+
+      <button
+        onClick={onOpenFlowchart}
+        className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-[#e5e5e5] hover:bg-[#333] rounded transition-colors shrink-0"
+        title="Generar flujogramas Mermaid"
+      >
+        <span>📊</span>
+        <span>Flujo</span>
       </button>
 
       {/* Search bar */}

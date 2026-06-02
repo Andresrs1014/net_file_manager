@@ -7,6 +7,7 @@ import { AIChat } from './components/ai/AIChat';
 import { Scaffolder } from './components/ai/Scaffolder';
 import { DocumentViewer } from './components/document/DocumentViewer';
 import { GraphPanel } from './components/graph/GraphPanel';
+import { FlowchartPanel } from './components/flowchart/FlowchartPanel';
 import { fileService, getConfig as getAppConfig, setConfig as setAppConfig } from './services/fileService';
 import { isSupported } from './services/documentService';
 import type { ClipboardContent } from './types';
@@ -24,6 +25,7 @@ function App() {
   const [showScaffolder, setShowScaffolder] = useState(false);
   const [documentViewerPath, setDocumentViewerPath] = useState<string | null>(null);
   const [showGraphPanel, setShowGraphPanel] = useState(false);
+  const [showFlowchartPanel, setShowFlowchartPanel] = useState(false);
 
   // Handle file double-click (opens document viewer for supported files)
   const handleFileOpen = (filePath: string) => {
@@ -213,6 +215,7 @@ function App() {
         aiVisible={aiVisible}
         currentPath={currentPath}
         onOpenGraph={() => setShowGraphPanel(true)}
+        onOpenFlowchart={() => setShowFlowchartPanel(true)}
       />
 
       {/* Main content */}
@@ -312,6 +315,13 @@ function App() {
         {showGraphPanel && (
           <GraphPanel
             onClose={() => setShowGraphPanel(false)}
+          />
+        )}
+
+        {/* Flowchart Generator Modal */}
+        {showFlowchartPanel && (
+          <FlowchartPanel
+            onClose={() => setShowFlowchartPanel(false)}
           />
         )}
       </div>
