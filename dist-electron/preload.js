@@ -12,8 +12,13 @@ const electronAPI = {
     createFolder: (path) => electron_1.ipcRenderer.invoke('fs:mkdir', path),
     createFile: (path, content) => electron_1.ipcRenderer.invoke('fs:writeFile', path, content),
     readFile: (path) => electron_1.ipcRenderer.invoke('fs:readFile', path),
+    writeFile: (path, content) => electron_1.ipcRenderer.invoke('fs:writeFile', path, content),
     openFile: (path) => electron_1.ipcRenderer.invoke('fs:open', path),
     fileExists: (path) => electron_1.ipcRenderer.invoke('fs:exists', path),
+    renameFile: (oldPath, newName) => electron_1.ipcRenderer.invoke('fs:rename', oldPath, newName),
+    showInFolder: (path) => electron_1.ipcRenderer.invoke('fs:showInFolder', path),
+    getClipboard: () => electron_1.ipcRenderer.invoke('fs:getClipboard'),
+    setClipboard: (text) => electron_1.ipcRenderer.invoke('fs:setClipboard', text),
     // Diálogos nativos
     openFolderDialog: () => electron_1.ipcRenderer.invoke('dialog:openFolder'),
     openFileDialog: (filters) => electron_1.ipcRenderer.invoke('dialog:openFile', filters),
@@ -23,6 +28,8 @@ const electronAPI = {
     getConfigPath: () => electron_1.ipcRenderer.invoke('config:getPath'),
     readConfig: () => electron_1.ipcRenderer.invoke('config:read'),
     writeConfig: (config) => electron_1.ipcRenderer.invoke('config:write', config),
+    // Terminal
+    executeCommand: (cmd, cwd) => electron_1.ipcRenderer.invoke('terminal:execute', cmd, cwd),
 };
 electron_1.contextBridge.exposeInMainWorld('electronAPI', electronAPI);
 //# sourceMappingURL=preload.js.map

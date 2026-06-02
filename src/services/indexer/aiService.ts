@@ -1,6 +1,7 @@
 /**
  * AI Service - Unified interface for Ollama and Claude API
  */
+import { OLLAMA_DEFAULT_PORT } from './aiConfig';
 
 export interface Message {
   role: 'system' | 'user' | 'assistant';
@@ -44,17 +45,28 @@ class AIService {
     const model = this.config?.model || 'qwen2.5-coder:7b';
     
     try {
-      const response = await fetch('http://localhost:11434/api/chat', {
+      const response = await fetch(`http://localhost:${OLLAMA_DEFAULT_PORT}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model, messages, stream: false }),
       });
       
-      if (!response.ok) throw new Error(`Ollama error: ${response.statusText}`);
+      if (!response.ok) {
+        // Try to get error message from response
+        let errorMsg = `Ollama error: ${response.statusText}`;
+        try {
+          const errorData = await response.json();
+          if (errorData?.error) errorMsg = `Ollama: ${errorData.error}`;
+        } catch { /* ignore */ }
+        throw new Error(errorMsg);
+      }
       
       const data = await response.json();
       return data.message?.content || '';
     } catch (error: any) {
+      if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError') || error.message.includes('Network request failed')) {
+        throw new Error('No se puede conectar a Ollama. Asegúrate de que Ollama esté corriendo: ejecuta "ollama serve" en terminal, luego reinicia NetVault.');
+      }
       throw new Error(`Ollama failed: ${error.message}`);
     }
   }

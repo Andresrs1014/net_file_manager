@@ -125,6 +125,23 @@ electron_1.ipcMain.handle('fs:exists', async (_, filePath) => {
         return false;
     }
 });
+electron_1.ipcMain.handle('fs:rename', async (_, oldPath, newName) => {
+    const dir = path.dirname(oldPath);
+    const newPath = path.join(dir, newName);
+    await fs.promises.rename(oldPath, newPath);
+    return newPath;
+});
+electron_1.ipcMain.handle('fs:showInFolder', async (_, filePath) => {
+    electron_1.shell.showItemInFolder(filePath);
+});
+electron_1.ipcMain.handle('fs:getClipboard', () => {
+    const clipboard = require('electron').clipboard;
+    return clipboard.read('copy') || '';
+});
+electron_1.ipcMain.handle('fs:setClipboard', (_, text) => {
+    const clipboard = require('electron').clipboard;
+    clipboard.writeText(text);
+});
 // IPC Handlers - Diálogos
 electron_1.ipcMain.handle('dialog:openFolder', async () => {
     const result = await electron_1.dialog.showOpenDialog(mainWindow, {
@@ -178,6 +195,20 @@ electron_1.ipcMain.handle('config:read', async () => {
 electron_1.ipcMain.handle('config:write', async (_, config) => {
     const configPath = path.join(electron_1.app.getPath('userData'), 'config.json');
     await fs.promises.writeFile(configPath, JSON.stringify(config, null, 2), 'utf-8');
+});
+// IPC Handlers - Terminal
+electron_1.ipcMain.handle('terminal:execute', async (_, cmd, cwd) => {
+    const { exec } = require('child_process');
+    return new Promise((resolve) => {
+        exec(cmd, { cwd }, (error, stdout, stderr) => {
+            if (error) {
+                resolve(stderr || error.message);
+            }
+            else {
+                resolve(stdout);
+            }
+        });
+    });
 });
 // App lifecycle
 electron_1.app.whenReady().then(() => {

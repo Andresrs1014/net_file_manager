@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import type { AIConfig } from './aiService';
 
 const STORAGE_KEY = 'netvault-ai-config';
+export const OLLAMA_DEFAULT_PORT = 11435;
 
 const DEFAULT_CONFIG: AIConfig = {
   provider: 'ollama',
