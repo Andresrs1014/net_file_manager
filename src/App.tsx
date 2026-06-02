@@ -9,6 +9,7 @@ import { DocumentViewer } from './components/document/DocumentViewer';
 import { GraphPanel } from './components/graph/GraphPanel';
 import { FlowchartPanel } from './components/flowchart/FlowchartPanel';
 import { AnalyzerPanel } from './components/analyzer/AnalyzerPanel';
+import { ExportPanel, createSampleExportData } from './components/export/ExportPanel';
 import { fileService, getConfig as getAppConfig, setConfig as setAppConfig } from './services/fileService';
 import { isSupported } from './services/documentService';
 import type { ClipboardContent } from './types';
@@ -28,6 +29,7 @@ function App() {
   const [showGraphPanel, setShowGraphPanel] = useState(false);
   const [showFlowchartPanel, setShowFlowchartPanel] = useState(false);
   const [showAnalyzerPanel, setShowAnalyzerPanel] = useState(false);
+  const [showExportPanel, setShowExportPanel] = useState(false);
 
   // Handle file double-click (opens document viewer for supported files)
   const handleFileOpen = (filePath: string) => {
@@ -219,6 +221,7 @@ function App() {
         onOpenGraph={() => setShowGraphPanel(true)}
         onOpenFlowchart={() => setShowFlowchartPanel(true)}
         onOpenAnalyzer={() => setShowAnalyzerPanel(true)}
+        onOpenExport={() => setShowExportPanel(true)}
       />
 
       {/* Main content */}
@@ -332,6 +335,14 @@ function App() {
         {showAnalyzerPanel && (
           <AnalyzerPanel
             onClose={() => setShowAnalyzerPanel(false)}
+          />
+        )}
+
+        {/* Export Panel Modal */}
+        {showExportPanel && (
+          <ExportPanel
+            data={createSampleExportData()}
+            onClose={() => setShowExportPanel(false)}
           />
         )}
       </div>

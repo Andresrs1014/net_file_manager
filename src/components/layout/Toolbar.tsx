@@ -16,6 +16,7 @@ interface ToolbarProps {
   onOpenGraph?: () => void;
   onOpenFlowchart?: () => void;
   onOpenAnalyzer?: () => void;
+  onOpenExport?: () => void;
 }
 
 interface SearchResult {
@@ -38,6 +39,7 @@ export function Toolbar({
   onOpenGraph,
   onOpenFlowchart,
   onOpenAnalyzer,
+  onOpenExport,
 }: ToolbarProps) {
   const handleSearchSelect = async (result: SearchResult) => {
     const dirPath = result.entry.isDirectory 
@@ -146,6 +148,15 @@ export function Toolbar({
       >
         <span>🔬</span>
         <span>Analizar</span>
+      </button>
+
+      <button
+        onClick={onOpenExport}
+        className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-[#e5e5e5] hover:bg-[#333] rounded transition-colors shrink-0"
+        title="Exportar análisis a ZIP"
+      >
+        <span>📦</span>
+        <span>Exportar</span>
       </button>
 
       {/* Search bar */}
