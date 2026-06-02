@@ -15,6 +15,7 @@ interface ToolbarProps {
   currentPath?: string;
   onOpenGraph?: () => void;
   onOpenFlowchart?: () => void;
+  onOpenAnalyzer?: () => void;
 }
 
 interface SearchResult {
@@ -36,6 +37,7 @@ export function Toolbar({
   currentPath,
   onOpenGraph,
   onOpenFlowchart,
+  onOpenAnalyzer,
 }: ToolbarProps) {
   const handleSearchSelect = async (result: SearchResult) => {
     const dirPath = result.entry.isDirectory 
@@ -135,6 +137,15 @@ export function Toolbar({
       >
         <span>📊</span>
         <span>Flujo</span>
+      </button>
+
+      <button
+        onClick={onOpenAnalyzer}
+        className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-[#e5e5e5] hover:bg-[#333] rounded transition-colors shrink-0"
+        title="Analizar procedimientos con IA"
+      >
+        <span>🔬</span>
+        <span>Analizar</span>
       </button>
 
       {/* Search bar */}
