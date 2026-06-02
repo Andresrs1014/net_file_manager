@@ -45,12 +45,13 @@ function App() {
       loadConfig();
     } else {
       // Mock electronAPI for dev without Electron
+      const userProfile = 'C:\\Users\\' + (process.env.USERNAME || 'User');
       (window as any).electronAPI = {
         readDirectory: async () => [],
-        readConfig: async () => ({ theme: 'dark', lastLeftPath: 'C:\\', lastRightPath: 'C:\\', favorites: [], terminalVisible: false }),
+        readConfig: async () => ({ theme: 'dark', lastLeftPath: userProfile, lastRightPath: userProfile, favorites: [], terminalVisible: false }),
         writeConfig: async () => {},
-        showOpenFolderDialog: async () => 'C:\\',
-        openFolderDialog: async () => 'C:\\',
+        showOpenFolderDialog: async () => userProfile,
+        openFolderDialog: async () => userProfile,
         openFileDialog: async () => null,
         saveFileDialog: async () => null,
         deleteFile: async () => {},
@@ -61,11 +62,16 @@ function App() {
         showMessage: async () => 0,
         readFile: async () => '',
         writeFile: async () => {},
-        getPath: async () => 'C:\\',
+        getPath: async () => userProfile,
         minimize: () => {},
         maximize: () => {},
         close: () => {},
         isMaximized: async () => false,
+        getClipboard: async () => '',
+        setClipboard: async () => {},
+        getFileStats: async () => ({ size: 0, modified: new Date(), created: new Date(), isDirectory: false }),
+        fileExists: async () => false,
+        showInFolder: async () => {},
       };
       setReady(true);
     }
