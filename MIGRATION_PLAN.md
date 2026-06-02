@@ -2492,4 +2492,146 @@ Mantener Python (tkinter) tiene sentido si:
 
 **Mi recomendación:** Si este es un proyecto que vas a usar todos los días y querés que crezca, la migración vale la pena. Las 16 semanas se recuperan en mejor experiencia de uso y mantenibilidad.
 
+---
+
+## 8. Fases de Optimización Avanzada (Post-MVP)
+
+### Fase 9: Rust Fast-Indexer Binary ⚡
+
+**Objetivo:** Crear un binary compilado en Rust para búsqueda de archivos ultra-rápida que rivalice con herramientas como Everything o Agent Ransack.
+
+**Arquitectura:**
+```
+Electron App (TypeScript/React)
+        ↓ IPC (child_process spawn)
+    fast-indexer.exe  ← Rust binary
+        ↓
+    Sistema de archivos Windows
+```
+
+**Componentes a implementar:**
+
+**9.1 Binary Rust (`fast-indexer/`):**
+```rust
+// Cargo.toml
+[package]
+name = "fast-indexer"
+version = "0.1.0"
+
+[dependencies]
+walkdir = "2"        // Iteración rápida de directorios
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rayon = "1"          // Paralelismo para multi-core
+clap = { version = "4", features = ["derive"] }
+```
+
+**9.2 API del binary:**
+```bash
+# Indexar directorio
+fast-indexer index "C:\Projects" --depth 10 --output index.json
+
+# Buscar
+fast-indexer search "query" --index index.json --limit 50
+
+# Búsqueda por extensión
+fast-indexer search --ext .pdf,.md --index index.json
+
+# Modo servidor (IPC con Electron)
+fast-indexer serve --port 9876
+```
+
+**9.3 Formato de salida JSON:**
+```json
+{
+  "files": [
+    {
+      "name": "README.md",
+      "path": "C:\\Projects\\README.md",
+      "size": 1234,
+      "modified": "2024-01-15T10:30:00Z",
+      "extension": ".md"
+    }
+  ],
+  "stats": {
+    "total_files": 12345,
+    "total_dirs": 234,
+    "index_time_ms": 567
+  }
+}
+```
+
+**9.4 Integración con Electron:**
+
+`src/services/rustSearchService.ts`:
+```typescript
+import { spawn } from 'child_process';
+import * as path from 'path';
+
+export class RustSearchService {
+  private binaryPath: string;
+  
+  constructor(binaryPath: string) {
+    this.binaryPath = binaryPath;
+  }
+  
+  async indexDirectory(dirPath: string): Promise<IndexResult> {
+    return new Promise((resolve, reject) => {
+      const proc = spawn(this.binaryPath, ['index', dirPath, '--output', '-']);
+      let output = '';
+      
+      proc.stdout.on('data', (data) => output += data.toString());
+      proc.on('close', (code) => {
+        if (code === 0) {
+          resolve(JSON.parse(output));
+        } else {
+          reject(new Error(`Index failed with code ${code}`));
+        }
+      });
+    });
+  }
+  
+  async search(query: string, indexPath: string): Promise<SearchResult[]> {
+    // Similar implementation
+  }
+}
+```
+
+**9.5 Optimizaciones de Rust:**
+- **walkdir**: Iteración asíncrona de millones de archivos
+- **rayon**: Parallel directory traversal usando todos los cores
+- **Memory-mapped files**: Para índices grandes
+- **Watch mode**: Detectar cambios en tiempo real
+
+**Criterios de aceptación:**
+- [ ] Binary compila y corre en Windows x64
+- [ ] Indexa 100k+ archivos en <5 segundos
+- [ ] Búsqueda de resultados en <50ms
+- [ ] Comunicación JSON funcional con Electron
+- [ ] Graceful fallback a JS indexer si binary no disponible
+
+**Esfuerzo estimado:** 2-3 semanas
+
+---
+
+### Fase 10: WebAssembly Module (Opcional) 📦
+
+**Objetivo:** Si en algún momento necesitás aún más velocidad en el renderer, considerar un módulo WASM compilado desde Rust.
+
+**Alternativas:**
+- Mantener el binary externo (más simple, ya implementado en Fase 9)
+- Compilar a WASM para ejecutar en el renderer (requiere más setup)
+
+**Recomendación:** Empezar con el binary externo de Fase 9. WASM es overkill hasta que pruebes que el binary no es suficiente.
+
+---
+
+### Resumen de Fases
+
+| Fase | Descripción | Prioridad |
+|------|--------------|-----------|
+| 1-8 | Migración principal (completada) | ✅ |
+| 9 | Rust Fast-Indexer | 🔥 Alta |
+| 10 | WASM (opcional, futuro) | 📊 Baja |
+
 ¿Querés que empiece con la Fase 1 o preferís discutir algún aspecto del plan primero?
