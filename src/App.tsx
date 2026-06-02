@@ -3,6 +3,7 @@ import { Toolbar } from './components/layout/Toolbar';
 import { Sidebar } from './components/layout/Sidebar';
 import { FilePanel } from './components/file-panel/FilePanel';
 import { Terminal } from './components/terminal/Terminal';
+import { AIChat } from './components/ai/AIChat';
 import { fileService, getConfig as getAppConfig, setConfig as setAppConfig } from './services/fileService';
 import type { ClipboardContent } from './types';
 
@@ -15,6 +16,7 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [favorites, setFavorites] = useState<string[]>([]);
   const [clipboard, setClipboard] = useState<ClipboardContent | null>(null);
+  const [aiVisible, setAiVisible] = useState(false);
 
   useEffect(() => {
     if (window.electronAPI) {
@@ -123,6 +125,10 @@ function App() {
     document.documentElement.classList.toggle('dark');
   };
 
+  const handleToggleAI = () => {
+    setAiVisible(!aiVisible);
+  };
+
   const handleSidebarNavigate = (path: string) => {
     if (activePanel === 'left') {
       handleLeftPathChange(path);
@@ -163,6 +169,8 @@ function App() {
         clipboard={clipboard}
         onClipboardClear={() => setClipboard(null)}
         onNavigateToPath={handleNavigateToPath}
+        onToggleAI={handleToggleAI}
+        aiVisible={aiVisible}
         currentPath={currentPath}
       />
 
@@ -192,8 +200,15 @@ function App() {
           {/* Divider */}
           <div className="w-1 bg-[#333] cursor-col-resize hover:bg-[#3b82f6] transition-colors" />
 
-          {/* Right panel or Terminal */}
-          {terminalVisible ? (
+          {/* Right panel or Terminal or AI Chat */}
+          {aiVisible ? (
+            <div className="w-96 border-l border-[#404040]">
+              <AIChat
+                projectPath={currentPath}
+                onClose={() => setAiVisible(false)}
+              />
+            </div>
+          ) : terminalVisible ? (
             <Terminal
               initialCwd={currentPath}
               onClose={() => setTerminalVisible(false)}

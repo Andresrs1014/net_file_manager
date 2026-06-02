@@ -10,6 +10,8 @@ interface ToolbarProps {
   clipboard: ClipboardContent | null;
   onClipboardClear: () => void;
   onNavigateToPath?: (path: string) => void;
+  onToggleAI?: () => void;
+  aiVisible?: boolean;
   currentPath?: string;
 }
 
@@ -27,6 +29,8 @@ export function Toolbar({
   clipboard,
   onClipboardClear,
   onNavigateToPath,
+  onToggleAI,
+  aiVisible,
   currentPath,
 }: ToolbarProps) {
   const handleSearchSelect = async (result: SearchResult) => {
@@ -48,7 +52,8 @@ export function Toolbar({
   };
 
   return (
-    <header className="h-12 bg-[#262626] flex items-center px-4 gap-3 border-b border-[#404040]">
+    <header className="h-12 bg-[#262626] flex items-center px-4 gap-2 border-b border-[#404040]">
+      {/* Logo/Título */}
       <div className="flex items-center gap-2 shrink-0">
         <span className="text-lg">📁</span>
         <h1 className="text-base font-semibold text-[#3b82f6]">NetVault</h1>
@@ -56,6 +61,7 @@ export function Toolbar({
 
       <div className="w-px h-6 bg-[#404040] shrink-0" />
 
+      {/* Actions */}
       <button
         onClick={onOpenFolder}
         className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-[#e5e5e5] hover:bg-[#333] rounded transition-colors shrink-0"
@@ -68,7 +74,7 @@ export function Toolbar({
       <button
         onClick={handleIndexCurrentPath}
         className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-[#e5e5e5] hover:bg-[#333] rounded transition-colors shrink-0"
-        title="Indexar directorio (ultra-fast 🔥)"
+        title="Indexar directorio"
       >
         <span>⚡</span>
         <span>Indexar</span>
@@ -87,13 +93,28 @@ export function Toolbar({
         <span>Terminal</span>
       </button>
 
+      <button
+        onClick={onToggleAI}
+        className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded transition-colors shrink-0 ${
+          aiVisible 
+            ? 'bg-[#8b5cf6] text-white' 
+            : 'text-[#e5e5e5] hover:bg-[#333]'
+        }`}
+        title="Alternar AI Assistant"
+      >
+        <span>🤖</span>
+        <span>AI</span>
+      </button>
+
+      {/* Search bar */}
       <SearchBar
         onResultSelect={handleSearchSelect}
-        placeholder="Buscar archivos... (Ctrl+F)"
+        placeholder="Buscar archivos..."
       />
 
       <div className="flex-1" />
 
+      {/* Clipboard status */}
       {clipboard && (
         <div className="flex items-center gap-2 px-3 py-1 bg-[#1a1a1a] rounded border border-[#404040] shrink-0">
           <span className="text-sm text-[#a3a3a3]">
@@ -109,6 +130,7 @@ export function Toolbar({
         </div>
       )}
 
+      {/* Actions right */}
       <button
         onClick={onToggleTheme}
         className="p-2 text-[#a3a3a3] hover:text-[#e5e5e5] hover:bg-[#333] rounded transition-colors shrink-0"
