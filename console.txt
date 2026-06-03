@@ -1,0 +1,1 @@
+{"path": "C:\\net_file_manager\\console.txt"}

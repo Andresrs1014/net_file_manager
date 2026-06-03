@@ -1,0 +1,337 @@
+import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
+import * as path from 'path';
+import * as fs from 'fs';
+
+let mainWindow: BrowserWindow | null = null;
+
+function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 1400,
+    height: 900,
+    minWidth: 1100,
+    minHeight: 700,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+    backgroundColor: '#1a1a1a',
+    show: false,
+  });
+
+  // Cargar la app
+  if (process.env.NODE_ENV === 'development') {
+    mainWindow.loadURL('http://localhost:5173');
+    mainWindow.webContents.openDevTools();
+  } else {
+    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+  }
+
+  mainWindow.once('ready-to-show', () => {
+    mainWindow?.show();
+  });
+
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
+}
+
+// IPC Handlers - Sistema de archivos
+ipcMain.handle('fs:readDir', async (_, dirPath: string) => {
+  try {
+    const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+    return entries.map(entry => ({
+      name: entry.name,
+      path: path.join(dirPath, entry.name),
+      isDirectory: entry.isDirectory(),
+      isFile: entry.isFile(),
+    }));
+  } catch (error: any) {
+    throw new Error(`No se pudo leer el directorio: ${error.message}`);
+  }
+});
+
+ipcMain.handle('fs:stats', async (_, filePath: string) => {
+  const stats = await fs.promises.stat(filePath);
+  return {
+    size: stats.size,
+    modified: stats.mtime,
+    created: stats.birthtime,
+    isDirectory: stats.isDirectory(),
+  };
+});
+
+ipcMain.handle('fs:copy', async (_, src: string, dst: string) => {
+  await fs.promises.copyFile(src, dst);
+});
+
+ipcMain.handle('fs:move', async (_, src: string, dst: string) => {
+  await fs.promises.rename(src, dst);
+});
+
+ipcMain.handle('fs:delete', async (_, filePath: string, permanent: boolean) => {
+  if (permanent) {
+    await fs.promises.unlink(filePath);
+  } else {
+    await shell.trashItem(filePath);
+  }
+});
+
+ipcMain.handle('fs:mkdir', async (_, dirPath: string) => {
+  await fs.promises.mkdir(dirPath, { recursive: true });
+});
+
+ipcMain.handle('fs:writeFile', async (_, filePath: string, content: string) => {
+  await fs.promises.writeFile(filePath, content, 'utf-8');
+});
+
+ipcMain.handle('fs:readFile', async (_, filePath: string) => {
+  return await fs.promises.readFile(filePath);
+});
+
+ipcMain.handle('fs:open', async (_, filePath: string) => {
+  await shell.openPath(filePath);
+});
+
+ipcMain.handle('fs:exists', async (_, filePath: string) => {
+  try {
+    await fs.promises.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+});
+
+ipcMain.handle('fs:rename', async (_, oldPath: string, newName: string) => {
+  const dir = path.dirname(oldPath);
+  const newPath = path.join(dir, newName);
+  await fs.promises.rename(oldPath, newPath);
+  return newPath;
+});
+
+ipcMain.handle('fs:showInFolder', async (_, filePath: string) => {
+  shell.showItemInFolder(filePath);
+});
+
+ipcMain.handle('fs:showProperties', async (_, filePath: string) => {
+  const { exec } = require('child_process');
+  return new Promise((resolve) => {
+    exec(`powershell.exe -Command "Show-ItemProperty -Path '${filePath.replace(/'/g, "''")}'"`, { cwd: path.dirname(filePath) }, (error: Error | null, stdout: string, stderr: string) => {
+      if (error) {
+        exec(`explorer.exe /select,"${filePath}"`, (err: Error | null) => {
+          resolve({ success: !err, output: err?.message || '' });
+        });
+      } else {
+        resolve({ success: true, output: stdout });
+      }
+    });
+  });
+});
+
+ipcMain.handle('fs:getClipboard', () => {
+  const clipboard = require('electron').clipboard;
+  return clipboard.read('copy') || '';
+});
+
+ipcMain.handle('fs:setClipboard', (_, text: string) => {
+  const clipboard = require('electron').clipboard;
+  clipboard.writeText(text);
+});
+
+// IPC Handlers - Diálogos
+ipcMain.handle('dialog:openFolder', async () => {
+  const result = await dialog.showOpenDialog(mainWindow!, {
+    properties: ['openDirectory'],
+  });
+  return result.canceled ? null : result.filePaths[0];
+});
+
+ipcMain.handle('dialog:openFile', async (_, filters?: { name: string; extensions: string[] }[]) => {
+  const result = await dialog.showOpenDialog(mainWindow!, {
+    properties: ['openFile'],
+    filters: filters || [
+      { name: 'Documentos', extensions: ['pdf', 'docx', 'doc', 'md'] },
+      { name: 'Todos los archivos', extensions: ['*'] },
+    ],
+  });
+  return result.canceled ? null : result.filePaths[0];
+});
+
+ipcMain.handle('dialog:saveFile', async (_, defaultPath?: string, filters?: { name: string; extensions: string[] }[]) => {
+  const result = await dialog.showSaveDialog(mainWindow!, {
+    defaultPath,
+    filters: filters || [
+      { name: 'Archivos ZIP', extensions: ['zip'] },
+    ],
+  });
+  return result.canceled ? null : result.filePath;
+});
+
+ipcMain.handle('dialog:message', async (_, options: { type?: string; title?: string; message: string; detail?: string; buttons?: string[] }) => {
+  const result = await dialog.showMessageBox(mainWindow!, {
+    type: options.type as any || 'info',
+    title: options.title || 'NetVault',
+    message: options.message,
+    detail: options.detail,
+    buttons: options.buttons || ['Aceptar'],
+  });
+  return result.response;
+});
+
+// IPC Handlers - Config
+ipcMain.handle('config:getPath', () => {
+  return app.getPath('userData');
+});
+
+ipcMain.handle('config:read', async () => {
+  const configPath = path.join(app.getPath('userData'), 'config.json');
+  try {
+    const data = await fs.promises.readFile(configPath, 'utf-8');
+    return JSON.parse(data);
+  } catch {
+    return {};
+  }
+});
+
+ipcMain.handle('config:write', async (_, config: object) => {
+  const configPath = path.join(app.getPath('userData'), 'config.json');
+  await fs.promises.writeFile(configPath, JSON.stringify(config, null, 2), 'utf-8');
+});
+
+// IPC Handlers - Terminal
+ipcMain.handle('terminal:execute', async (_, cmd: string, cwd: string) => {
+  const { exec } = require('child_process');
+  return new Promise((resolve) => {
+    exec(cmd, { cwd }, (error: Error | null, stdout: string, stderr: string) => {
+      if (error) {
+        resolve(stderr || error.message);
+      } else {
+        resolve(stdout);
+      }
+    });
+  });
+});
+
+// Ollama chat handler (bypasses CORS since main process has no restrictions)
+ipcMain.handle('ollama:chat', async (_, model: string, messages: any[]) => {
+  try {
+    const response = await fetch('http://localhost:11434/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, messages, stream: false }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({})) as { error?: string };
+      throw new Error(errorData.error || `HTTP ${response.status}`);
+    }
+
+    const data = await response.json() as { message?: { content?: string } };
+    return { success: true, content: data.message?.content || '' };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+});
+
+// IPC Handler - Detect installed code editors
+ipcMain.handle('editors:detect', async () => {
+  const { exec } = require('child_process');
+  const editors: { name: string; path: string; icon: string }[] = [];
+
+  const commonEditors = [
+    { name: 'Visual Studio Code', cmd: 'code', icon: '💻' },
+    { name: 'Notepad++', cmd: 'notepad++', icon: '📝' },
+    { name: 'Sublime Text', cmd: 'sublime_text', icon: '🔥' },
+    { name: 'Atom', cmd: 'atom', icon: '⚛️' },
+    { name: 'Vim', cmd: 'vim', icon: '✌️' },
+    { name: 'GNU Emacs', cmd: 'emacs', icon: '🦋' },
+    { name: 'TextMate', cmd: 'mate', icon: '🍎' },
+    { name: 'Espresso', cmd: 'espresso', icon: '☕' },
+  ];
+
+  const searchPaths = [
+    process.env.LOCALAPPDATA || '',
+    process.env.PROGRAMFILES || '',
+    process.env['PROGRAMFILES(X86)'] || '',
+    'C:\\Users\\' + process.env.USERNAME + '\\AppData\\Local\\Programs',
+  ];
+
+  for (const editor of commonEditors) {
+    try {
+      // First try to find in PATH
+      const pathResult = await new Promise<string>((resolve) => {
+        exec(`where ${editor.cmd}`, (error: Error | null, stdout: string) => {
+          resolve(error ? '' : stdout.trim().split('\n')[0]);
+        });
+      });
+
+      if (pathResult) {
+        editors.push({ name: editor.name, path: pathResult, icon: editor.icon });
+        continue;
+      }
+
+      // Search in common installation directories
+      for (const searchPath of searchPaths) {
+        if (!searchPath) continue;
+
+        const patterns = [
+          `**/${editor.cmd}*.exe`,
+          `**/${editor.cmd}/**/*.exe`,
+        ];
+
+        // Use PowerShell to search for the executable
+        const searchResult: string = await new Promise((resolve) => {
+          exec(
+            `powershell.exe -Command "Get-ChildItem -Path '${searchPath}' -Recurse -Filter '${editor.cmd}*.exe' -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName"`,
+            (error: Error | null, stdout: string) => {
+              resolve(error ? '' : stdout.trim());
+            }
+          );
+        });
+
+        if (searchResult && searchResult.length > 0 && searchResult.length < 260) {
+          editors.push({ name: editor.name, path: searchResult, icon: editor.icon });
+          break;
+        }
+      }
+    } catch {
+      // Continue to next editor
+    }
+  }
+
+  return editors;
+});
+
+// IPC Handler - Open file with specific editor
+ipcMain.handle('editors:openWith', async (_, editorPath: string, filePath: string) => {
+  const { exec } = require('child_process');
+  const { spawn } = require('child_process');
+
+  return new Promise((resolve) => {
+    try {
+      // Use start command to properly handle paths with spaces
+      exec(`start "" "${editorPath}" "${filePath}"`, { shell: 'cmd.exe' }, (error: Error | null) => {
+        resolve({ success: !error, error: error?.message });
+      });
+    } catch (error: any) {
+      resolve({ success: false, error: error.message });
+    }
+  });
+});
+
+// App lifecycle
+app.whenReady().then(() => {
+  createWindow();
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow();
+    }
+  });
+});
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') {
+    app.quit();
+  }
+});

@@ -1,0 +1,60 @@
+appId: com.netvault.app
+productName: NetVault
+copyright: Copyright © 2024 Andrés Quintero
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - dist/**/*
+  - dist-electron/**/*
+  - package.json
+
+extraMetadata:
+  main: dist-electron/main.js
+
+asar: true
+compression: maximum
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+  # icon: assets/icon.ico  # Add your icon later
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: NetVault
+  # installerIcon: assets/icon.ico
+  # uninstallerIcon: assets/icon.ico
+  # installerHeaderIcon: assets/icon.ico
+  license: LICENSE.txt
+  installerLanguages:
+    - es_ES
+    - en_US
+  language: 1033
+  displayLanguageSelector: true
+
+portable:
+  artifactName: ${productName}-${version}-portable.${ext}
+
+publish: null
+
+electronDownload:
+  mirror: https://npmmirror.com/mirrors/electron/
+
+# Optional: Code signing (uncomment when you have a certificate)
+# windows:
+#   certificateFile: build/certificate.pfx
+#   certificatePassword: ${CERTIFICATE_PASSWORD}

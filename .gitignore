@@ -91,6 +91,9 @@ venv.bak/
 .DS_Store
 Thumbs.db
 
-# Pyinstaller 
+# Pyinstaller
 dist
 build
+
+# Dependencies
+node_modules/
