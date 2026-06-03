@@ -57,6 +57,7 @@ export interface AppConfig {
   lastLeftPath: string;
   lastRightPath: string;
   favorites: string[];
+  quickAccess: { icon: string; path: string; label: string }[];
   terminalVisible: boolean;
 }
 
@@ -76,6 +77,7 @@ export interface ElectronAPI {
   fileExists: (path: string) => Promise<boolean>;
   renameFile: (oldPath: string, newName: string) => Promise<string>;
   showInFolder: (path: string) => Promise<void>;
+  showItemProperties: (path: string) => Promise<{ success: boolean; output: string }>;
   getClipboard: () => Promise<string>;
   setClipboard: (text: string) => Promise<void>;
 
@@ -92,6 +94,10 @@ export interface ElectronAPI {
   getConfigPath: () => Promise<string>;
   readConfig: () => Promise<object>;
   writeConfig: (config: object) => Promise<void>;
+
+  // Code editors
+  detectEditors: () => Promise<{ name: string; path: string; icon: string }[]>;
+  openWithEditor: (editorPath: string, filePath: string) => Promise<{ success: boolean; error?: string }>;
 }
 
 declare global {

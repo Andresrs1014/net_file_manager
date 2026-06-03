@@ -17,6 +17,7 @@ const electronAPI = {
     fileExists: (path) => electron_1.ipcRenderer.invoke('fs:exists', path),
     renameFile: (oldPath, newName) => electron_1.ipcRenderer.invoke('fs:rename', oldPath, newName),
     showInFolder: (path) => electron_1.ipcRenderer.invoke('fs:showInFolder', path),
+    showItemProperties: (path) => electron_1.ipcRenderer.invoke('fs:showProperties', path),
     getClipboard: () => electron_1.ipcRenderer.invoke('fs:getClipboard'),
     setClipboard: (text) => electron_1.ipcRenderer.invoke('fs:setClipboard', text),
     // Diálogos nativos
@@ -32,6 +33,9 @@ const electronAPI = {
     executeCommand: (cmd, cwd) => electron_1.ipcRenderer.invoke('terminal:execute', cmd, cwd),
     // AI - Ollama chat (bypasses CORS via main process)
     chatWithOllama: (model, messages) => electron_1.ipcRenderer.invoke('ollama:chat', model, messages),
+    // Code editors detection
+    detectEditors: () => electron_1.ipcRenderer.invoke('editors:detect'),
+    openWithEditor: (editorPath, filePath) => electron_1.ipcRenderer.invoke('editors:openWith', editorPath, filePath),
 };
 electron_1.contextBridge.exposeInMainWorld('electronAPI', electronAPI);
 //# sourceMappingURL=preload.js.map

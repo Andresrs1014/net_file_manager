@@ -22,6 +22,12 @@ function App() {
   const [terminalVisible, setTerminalVisible] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [favorites, setFavorites] = useState<string[]>([]);
+  const [quickAccess, setQuickAccess] = useState<{ icon: string; path: string; label: string }[]>([
+    { icon: '💻', path: 'C:\\', label: 'Este equipo' },
+    { icon: '📥', path: 'C:\\Users\\User\\Downloads', label: 'Descargas' },
+    { icon: '📁', path: 'C:\\Users\\User\\Documents', label: 'Documentos' },
+    { icon: '🖥️', path: 'D:\\', label: 'Disco D:' },
+  ]);
   const [clipboard, setClipboard] = useState<ClipboardContent | null>(null);
   const [aiVisible, setAiVisible] = useState(false);
   const [showScaffolder, setShowScaffolder] = useState(false);
@@ -234,10 +240,42 @@ function App() {
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
         <Sidebar
+          quickAccess={quickAccess}
           favorites={favorites}
           onNavigate={handleSidebarNavigate}
           onToggle={() => setSidebarOpen(!sidebarOpen)}
           isOpen={sidebarOpen}
+          clipboard={clipboard}
+          onCopy={(path) => setClipboard({ action: 'copy', paths: [path] })}
+          onCut={(path) => setClipboard({ action: 'cut', paths: [path] })}
+          onPaste={async (path) => {
+            if (clipboard && clipboard.paths.length > 0) {
+              for (const srcPath of clipboard.paths) {
+                const fileName = srcPath.split('\\').pop() || srcPath.split('/').pop();
+                const dstPath = path.endsWith('\\') ? path + fileName : path + '\\' + fileName;
+                try {
+                  if (clipboard.action === 'copy') {
+                    await fileService.copyFile(srcPath, dstPath);
+                  } else if (clipboard.action === 'cut') {
+                    await fileService.moveFile(srcPath, dstPath);
+                  }
+                } catch (error) {
+                  console.error('Error pasting:', error);
+                }
+              }
+              setClipboard(null);
+            }
+          }}
+          onRemoveFavorite={(path) => {
+            const newFavorites = favorites.filter(f => f !== path);
+            setFavorites(newFavorites);
+            fileService.saveConfig({ favorites: newFavorites });
+          }}
+          onRemoveFromQuickAccess={(path) => {
+            const newQuickAccess = quickAccess.filter(item => item.path !== path);
+            setQuickAccess(newQuickAccess);
+            fileService.saveConfig({ quickAccess: newQuickAccess });
+          }}
         />
 
         {/* Panels */}

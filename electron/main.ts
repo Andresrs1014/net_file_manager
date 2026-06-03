@@ -113,6 +113,21 @@ ipcMain.handle('fs:showInFolder', async (_, filePath: string) => {
   shell.showItemInFolder(filePath);
 });
 
+ipcMain.handle('fs:showProperties', async (_, filePath: string) => {
+  const { exec } = require('child_process');
+  return new Promise((resolve) => {
+    exec(`powershell.exe -Command "Show-ItemProperty -Path '${filePath.replace(/'/g, "''")}'"`, { cwd: path.dirname(filePath) }, (error: Error | null, stdout: string, stderr: string) => {
+      if (error) {
+        exec(`explorer.exe /select,"${filePath}"`, (err: Error | null) => {
+          resolve({ success: !err, output: err?.message || '' });
+        });
+      } else {
+        resolve({ success: true, output: stdout });
+      }
+    });
+  });
+});
+
 ipcMain.handle('fs:getClipboard', () => {
   const clipboard = require('electron').clipboard;
   return clipboard.read('copy') || '';
@@ -205,17 +220,103 @@ ipcMain.handle('ollama:chat', async (_, model: string, messages: any[]) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model, messages, stream: false }),
     });
-    
+
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({})) as { error?: string };
       throw new Error(errorData.error || `HTTP ${response.status}`);
     }
-    
+
     const data = await response.json() as { message?: { content?: string } };
     return { success: true, content: data.message?.content || '' };
   } catch (error: any) {
     return { success: false, error: error.message };
   }
+});
+
+// IPC Handler - Detect installed code editors
+ipcMain.handle('editors:detect', async () => {
+  const { exec } = require('child_process');
+  const editors: { name: string; path: string; icon: string }[] = [];
+
+  const commonEditors = [
+    { name: 'Visual Studio Code', cmd: 'code', icon: '💻' },
+    { name: 'Notepad++', cmd: 'notepad++', icon: '📝' },
+    { name: 'Sublime Text', cmd: 'sublime_text', icon: '🔥' },
+    { name: 'Atom', cmd: 'atom', icon: '⚛️' },
+    { name: 'Vim', cmd: 'vim', icon: '✌️' },
+    { name: 'GNU Emacs', cmd: 'emacs', icon: '🦋' },
+    { name: 'TextMate', cmd: 'mate', icon: '🍎' },
+    { name: 'Espresso', cmd: 'espresso', icon: '☕' },
+  ];
+
+  const searchPaths = [
+    process.env.LOCALAPPDATA || '',
+    process.env.PROGRAMFILES || '',
+    process.env['PROGRAMFILES(X86)'] || '',
+    'C:\\Users\\' + process.env.USERNAME + '\\AppData\\Local\\Programs',
+  ];
+
+  for (const editor of commonEditors) {
+    try {
+      // First try to find in PATH
+      const pathResult = await new Promise<string>((resolve) => {
+        exec(`where ${editor.cmd}`, (error: Error | null, stdout: string) => {
+          resolve(error ? '' : stdout.trim().split('\n')[0]);
+        });
+      });
+
+      if (pathResult) {
+        editors.push({ name: editor.name, path: pathResult, icon: editor.icon });
+        continue;
+      }
+
+      // Search in common installation directories
+      for (const searchPath of searchPaths) {
+        if (!searchPath) continue;
+
+        const patterns = [
+          `**/${editor.cmd}*.exe`,
+          `**/${editor.cmd}/**/*.exe`,
+        ];
+
+        // Use PowerShell to search for the executable
+        const searchResult: string = await new Promise((resolve) => {
+          exec(
+            `powershell.exe -Command "Get-ChildItem -Path '${searchPath}' -Recurse -Filter '${editor.cmd}*.exe' -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName"`,
+            (error: Error | null, stdout: string) => {
+              resolve(error ? '' : stdout.trim());
+            }
+          );
+        });
+
+        if (searchResult && searchResult.length > 0 && searchResult.length < 260) {
+          editors.push({ name: editor.name, path: searchResult, icon: editor.icon });
+          break;
+        }
+      }
+    } catch {
+      // Continue to next editor
+    }
+  }
+
+  return editors;
+});
+
+// IPC Handler - Open file with specific editor
+ipcMain.handle('editors:openWith', async (_, editorPath: string, filePath: string) => {
+  const { exec } = require('child_process');
+  const { spawn } = require('child_process');
+
+  return new Promise((resolve) => {
+    try {
+      // Use start command to properly handle paths with spaces
+      exec(`start "" "${editorPath}" "${filePath}"`, { shell: 'cmd.exe' }, (error: Error | null) => {
+        resolve({ success: !error, error: error?.message });
+      });
+    } catch (error: any) {
+      resolve({ success: false, error: error.message });
+    }
+  });
 });
 
 // App lifecycle

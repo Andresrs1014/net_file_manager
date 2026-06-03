@@ -134,6 +134,21 @@ electron_1.ipcMain.handle('fs:rename', async (_, oldPath, newName) => {
 electron_1.ipcMain.handle('fs:showInFolder', async (_, filePath) => {
     electron_1.shell.showItemInFolder(filePath);
 });
+electron_1.ipcMain.handle('fs:showProperties', async (_, filePath) => {
+    const { exec } = require('child_process');
+    return new Promise((resolve) => {
+        exec(`powershell.exe -Command "Show-ItemProperty -Path '${filePath.replace(/'/g, "''")}'"`, { cwd: path.dirname(filePath) }, (error, stdout, stderr) => {
+            if (error) {
+                exec(`explorer.exe /select,"${filePath}"`, (err) => {
+                    resolve({ success: !err, output: err?.message || '' });
+                });
+            }
+            else {
+                resolve({ success: true, output: stdout });
+            }
+        });
+    });
+});
 electron_1.ipcMain.handle('fs:getClipboard', () => {
     const clipboard = require('electron').clipboard;
     return clipboard.read('copy') || '';
@@ -228,6 +243,80 @@ electron_1.ipcMain.handle('ollama:chat', async (_, model, messages) => {
     catch (error) {
         return { success: false, error: error.message };
     }
+});
+// IPC Handler - Detect installed code editors
+electron_1.ipcMain.handle('editors:detect', async () => {
+    const { exec } = require('child_process');
+    const editors = [];
+    const commonEditors = [
+        { name: 'Visual Studio Code', cmd: 'code', icon: '💻' },
+        { name: 'Notepad++', cmd: 'notepad++', icon: '📝' },
+        { name: 'Sublime Text', cmd: 'sublime_text', icon: '🔥' },
+        { name: 'Atom', cmd: 'atom', icon: '⚛️' },
+        { name: 'Vim', cmd: 'vim', icon: '✌️' },
+        { name: 'GNU Emacs', cmd: 'emacs', icon: '🦋' },
+        { name: 'TextMate', cmd: 'mate', icon: '🍎' },
+        { name: 'Espresso', cmd: 'espresso', icon: '☕' },
+    ];
+    const searchPaths = [
+        process.env.LOCALAPPDATA || '',
+        process.env.PROGRAMFILES || '',
+        process.env['PROGRAMFILES(X86)'] || '',
+        'C:\\Users\\' + process.env.USERNAME + '\\AppData\\Local\\Programs',
+    ];
+    for (const editor of commonEditors) {
+        try {
+            // First try to find in PATH
+            const pathResult = await new Promise((resolve) => {
+                exec(`where ${editor.cmd}`, (error, stdout) => {
+                    resolve(error ? '' : stdout.trim().split('\n')[0]);
+                });
+            });
+            if (pathResult) {
+                editors.push({ name: editor.name, path: pathResult, icon: editor.icon });
+                continue;
+            }
+            // Search in common installation directories
+            for (const searchPath of searchPaths) {
+                if (!searchPath)
+                    continue;
+                const patterns = [
+                    `**/${editor.cmd}*.exe`,
+                    `**/${editor.cmd}/**/*.exe`,
+                ];
+                // Use PowerShell to search for the executable
+                const searchResult = await new Promise((resolve) => {
+                    exec(`powershell.exe -Command "Get-ChildItem -Path '${searchPath}' -Recurse -Filter '${editor.cmd}*.exe' -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName"`, (error, stdout) => {
+                        resolve(error ? '' : stdout.trim());
+                    });
+                });
+                if (searchResult && searchResult.length > 0 && searchResult.length < 260) {
+                    editors.push({ name: editor.name, path: searchResult, icon: editor.icon });
+                    break;
+                }
+            }
+        }
+        catch {
+            // Continue to next editor
+        }
+    }
+    return editors;
+});
+// IPC Handler - Open file with specific editor
+electron_1.ipcMain.handle('editors:openWith', async (_, editorPath, filePath) => {
+    const { exec } = require('child_process');
+    const { spawn } = require('child_process');
+    return new Promise((resolve) => {
+        try {
+            // Use start command to properly handle paths with spaces
+            exec(`start "" "${editorPath}" "${filePath}"`, { shell: 'cmd.exe' }, (error) => {
+                resolve({ success: !error, error: error?.message });
+            });
+        }
+        catch (error) {
+            resolve({ success: false, error: error.message });
+        }
+    });
 });
 // App lifecycle
 electron_1.app.whenReady().then(() => {
