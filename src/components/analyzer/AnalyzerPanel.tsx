@@ -679,14 +679,15 @@ export function AnalyzerPanel({ onClose, filePath, defaultOutputRoot, onAnalysis
                 {analyzing ? 'Analizando...' : 'Analizar procedimiento'}
               </button>
               {!intranetLoggedIn && !session && (
-                <p className="text-xs text-center text-[#737373] mt-1">
-                  Inicia sesión en la intranet o en el servidor local
+                <p className="text-[10px] text-center text-[#505050] mt-1.5">
+                  Inicia sesión en la intranet o el servidor local
                 </p>
               )}
               {intranetLoggedIn && (
-                <p className="text-xs text-center text-emerald-600 mt-1">
-                  ✓ Via intranet ZYMO
-                </p>
+                <div className="flex items-center justify-center gap-1.5 mt-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                  <span className="text-[10px] text-emerald-600 font-mono tracking-tight">via intranet ZYMO</span>
+                </div>
               )}
             </div>
           </div>
