@@ -1,3 +1,0 @@
-def __init__(self, parent, app_ctrl, on_theme_change, on_terminal_toggle=None, on_ai_toggle=None, **kwargs):
-    ...
-    self.on_ai_toggle = on_ai_toggle
