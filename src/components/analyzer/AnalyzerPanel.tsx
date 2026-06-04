@@ -14,6 +14,7 @@ import {
   isAnalyzableFile,
 } from '../../services/procedureAnalysisService';
 import { getStoredSession } from '../../services/authService';
+import { intranetPost } from '../../services/intranetService';
 import { SigCommitModal } from '../sig/SigCommitModal';
 
 // ─── Sub-componentes de resultado ─────────────────────────────────────────────
@@ -343,20 +344,33 @@ export function AnalyzerPanel({ onClose, filePath, defaultOutputRoot, onAnalysis
   const handleAnalyze = async () => {
     if (!textContent.trim()) { setAnalysisError('Carga o pega el contenido del procedimiento.'); return; }
     if (!procedureCode.trim()) { setAnalysisError('Ingresa el código del procedimiento.'); return; }
-    if (!session) { setAnalysisError('Inicia sesión primero.'); return; }
+    if (!intranetLoggedIn && !session) { setAnalysisError('Inicia sesión en la intranet o en el servidor local.'); return; }
 
     setAnalyzing(true);
     setAnalysisError('');
     setResult(null);
-    setProgress('Enviando al servidor...');
+
+    const payload = {
+      procedureCode,
+      area,
+      textContent,
+      existingFlowchartMmd: existingFlowchart || undefined,
+    };
 
     try {
-      const r = await api.serverRunAnalysis?.({
-        procedureCode,
-        area,
-        textContent,
-        existingFlowchartMmd: existingFlowchart || undefined,
-      });
+      let r: { ok: boolean; data?: AnalysisPackage; error?: string } | null = null;
+
+      if (intranetLoggedIn) {
+        // Ruta primaria: intranet como proxy Claude (API key solo en el servidor)
+        setProgress('Analizando via intranet…');
+        const res = await intranetPost<AnalysisPackage>('/api/netvault/analizar', payload);
+        r = { ok: res.ok, data: res.data ?? undefined, error: res.error };
+      } else {
+        // Fallback offline: servidor local en 3847
+        setProgress('Analizando via servidor local…');
+        r = await api.serverRunAnalysis?.(payload) ?? null;
+      }
+
       if (r?.ok && r.data) {
         setResult(r.data);
         onAnalysisComplete?.(r.data);
@@ -658,15 +672,20 @@ export function AnalyzerPanel({ onClose, filePath, defaultOutputRoot, onAnalysis
             <div className="p-3 border-t border-[#2a2a2a]">
               <button
                 onClick={handleAnalyze}
-                disabled={analyzing || !session || !textContent.trim() || !procedureCode.trim()}
+                disabled={analyzing || (!intranetLoggedIn && !session) || !textContent.trim() || !procedureCode.trim()}
                 className="w-full flex items-center justify-center gap-2 py-2.5 bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {analyzing ? <Loader size={14} className="animate-spin" /> : <Play size={14} />}
                 {analyzing ? 'Analizando...' : 'Analizar procedimiento'}
               </button>
-              {!session && (
+              {!intranetLoggedIn && !session && (
                 <p className="text-xs text-center text-[#737373] mt-1">
-                  Inicia sesión (demo: admin / admin123)
+                  Inicia sesión en la intranet o en el servidor local
+                </p>
+              )}
+              {intranetLoggedIn && (
+                <p className="text-xs text-center text-emerald-600 mt-1">
+                  ✓ Via intranet ZYMO
                 </p>
               )}
             </div>
