@@ -14,11 +14,14 @@ import { GraphPanel } from './components/graph/GraphPanel';
 import { FlowchartPanel } from './components/flowchart/FlowchartPanel';
 import { AnalyzerPanel } from './components/analyzer/AnalyzerPanel';
 import { ExportPanel, createSampleExportData } from './components/export/ExportPanel';
+import { LoginModal } from './components/auth/LoginModal';
+import { ConversionQueue } from './components/queue/ConversionQueue';
 import { fileService, getConfig as getAppConfig, setConfig as setAppConfig } from './services/fileService';
 import { isSupported } from './services/documentService';
 import { searchService } from './services/searchService';
+import { logoutFromIntranet, type ZymoUser } from './services/authService';
 import type { AnalysisPackage, ClipboardContent } from './types';
-import { X, FolderOpen, Search, BarChart2, GitBranch, RefreshCw, Terminal as TerminalIcon, Bot, ChevronLeft } from 'lucide-react';
+import { X, FolderOpen, Search, BarChart2, GitBranch, RefreshCw, Terminal as TerminalIcon, Bot, ChevronLeft, Wifi, WifiOff, FileUp } from 'lucide-react';
 
 interface OpenTab {
   id: string;
@@ -50,6 +53,13 @@ function App() {
   const [showAnalyzerPanel, setShowAnalyzerPanel] = useState(false);
   const [analyzerFilePath, setAnalyzerFilePath] = useState<string | undefined>();
   const [showExportPanel, setShowExportPanel] = useState(false);
+
+  // ─── Auth ZYMO Intranet ────────────────────────────────────────────────────
+  const [session,        setSession]        = useState<{ user: ZymoUser; intranetUrl: string } | null>(null);
+  const [authChecked,    setAuthChecked]    = useState(false);
+  const [showLogin,      setShowLogin]      = useState(false);
+  const [showQueue,      setShowQueue]      = useState(false);
+  const [conversionArea, setConversionArea] = useState('');
 
   // Workbench state
   const [activeView, setActiveView] = useState<ActivityView>('explorer');
@@ -88,6 +98,24 @@ function App() {
     updateStats();
     const id = setInterval(updateStats, 3000);
     return () => clearInterval(id);
+  }, []);
+
+  // Auth check silencioso al arrancar
+  useEffect(() => {
+    if (!window.electronAPI) { setAuthChecked(true); return; }
+    const api = window.electronAPI as typeof window.electronAPI & { auth?: { ping: () => Promise<{ ok: boolean; loggedIn: boolean; user?: ZymoUser }> }; auth_getSession?: () => Promise<{ intranetUrl: string }> };
+    if (!api.auth) { setAuthChecked(true); return; }
+    api.auth.ping()
+      .then(async res => {
+        if (res.loggedIn && res.user) {
+          // leer URL guardada
+          const sessionRaw = await (api as { auth?: { getSession: () => Promise<{ intranetUrl: string }> } }).auth!.getSession();
+          setSession({ user: res.user, intranetUrl: sessionRaw.intranetUrl });
+        }
+      })
+      .catch(() => { /* sin conexión: modo local */ })
+      .finally(() => setAuthChecked(true));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -604,6 +632,41 @@ function App() {
               >
                 <BarChart2 size={14} />
               </button>
+
+              {/* ── ZYMO Intranet connection badge ── */}
+              {authChecked && (
+                session ? (
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => { setConversionArea(session?.user?.area ?? ''); setShowQueue(p => !p); }}
+                      title="Cola de conversión PDF → MD"
+                      className="h-7 px-2 text-xs rounded transition-colors text-[#505050] hover:text-[#a3a3a3]"
+                    >
+                      <FileUp size={14} />
+                    </button>
+                    <button
+                      onClick={async () => {
+                        await logoutFromIntranet();
+                        setSession(null);
+                      }}
+                      title={`Conectado: ${session.user.email}`}
+                      className="h-7 px-2 text-xs rounded transition-colors flex items-center gap-1 text-green-500 hover:text-red-400"
+                    >
+                      <Wifi size={14} />
+                      <span className="max-w-[80px] truncate hidden sm:inline">{session.user.full_name ?? session.user.email}</span>
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setShowLogin(true)}
+                    title="Conectar a ZYMO Intranet"
+                    className="h-7 px-2 text-xs rounded transition-colors text-[#505050] hover:text-blue-400 flex items-center gap-1"
+                  >
+                    <WifiOff size={14} />
+                    <span className="hidden sm:inline">ZYMO</span>
+                  </button>
+                )
+              )}
             </div>
           </div>
 
@@ -762,6 +825,32 @@ function App() {
         />
       )}
       {showExportPanel && <ExportPanel data={createSampleExportData()} onClose={() => setShowExportPanel(false)} />}
+
+      {/* ── Auth Modal ── */}
+      {showLogin && (
+        <LoginModal
+          onLoginSuccess={(user, url) => {
+            setSession({ user, intranetUrl: url });
+            setShowLogin(false);
+          }}
+          onDismiss={() => setShowLogin(false)}
+        />
+      )}
+
+      {/* ── Cola conversión PDF→MD ── */}
+      {showQueue && session && (
+        <ConversionQueue
+          area={conversionArea}
+          onClose={() => setShowQueue(false)}
+          onFinish={(count) => {
+            setShowQueue(false);
+            if (count > 0) {
+              (window.electronAPI as typeof window.electronAPI & { showMessage?: (o: object) => Promise<number> })
+                .showMessage?.({ type: 'info', title: 'Conversión completada', message: `${count} archivo(s) convertidos y enviados a la intranet.` });
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

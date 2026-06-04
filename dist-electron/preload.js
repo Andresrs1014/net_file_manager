@@ -52,8 +52,7 @@ const electronAPI = {
     scanVaultMarkdown: (rootPath) => electron_1.ipcRenderer.invoke('graph:scanMarkdown', rootPath),
     // Grafo LightRAG — proxy HTTP para evitar CORS
     loadLightRagGraph: (intranetUrl, token, opts) => electron_1.ipcRenderer.invoke('graph:lightrag', intranetUrl, token, opts ?? {}),
-    // ─── NetVault Server API ─────────────────────────────────────────────────
-    // El JWT nunca toca el renderer; toda autenticación pasa por el main process.
+    // ─── NetVault Server API (modo standalone / offline) ─────────────────────
     serverGetUrl: () => electron_1.ipcRenderer.invoke('server:getUrl'),
     serverSetUrl: (url) => electron_1.ipcRenderer.invoke('server:setUrl', url),
     serverHealth: () => electron_1.ipcRenderer.invoke('server:health'),
@@ -66,6 +65,24 @@ const electronAPI = {
     analysisGetLocalRubric: () => electron_1.ipcRenderer.invoke('analysis:getLocalRubric'),
     analysisSavePackage: (payload) => electron_1.ipcRenderer.invoke('analysis:savePackage', payload),
     openFolderForSave: () => electron_1.ipcRenderer.invoke('dialog:openFolderForSave'),
+    // ─── Auth ZYMO Intranet ────────────────────────────────────────────────────
+    // El JWT NUNCA toca el renderer directamente; sólo el main process lo guarda/usa.
+    auth: {
+        login: (intranetUrl, email, password) => electron_1.ipcRenderer.invoke('auth:login', intranetUrl, email, password),
+        logout: () => electron_1.ipcRenderer.invoke('auth:logout'),
+        getSession: () => electron_1.ipcRenderer.invoke('auth:getSession'),
+        ping: () => electron_1.ipcRenderer.invoke('auth:ping'),
+    },
+    // Proxy fetch a la intranet (añade Bearer y base URL automáticamente)
+    netvaultFetch: (endpoint, options) => electron_1.ipcRenderer.invoke('netvault:fetch', endpoint, options ?? {}),
+    // Cola de conversión PDF/DOCX → MD
+    queueConvertFiles: (filePaths, area) => electron_1.ipcRenderer.invoke('queue:convertFiles', filePaths, area),
+    // Escuchar progreso de la cola (SSE relay desde main)
+    onQueueProgress: (cb) => {
+        const handler = (_, data) => cb(data);
+        electron_1.ipcRenderer.on('queue:progress', handler);
+        return () => electron_1.ipcRenderer.removeListener('queue:progress', handler);
+    },
 };
 electron_1.contextBridge.exposeInMainWorld('electronAPI', electronAPI);
 //# sourceMappingURL=preload.js.map

@@ -718,6 +718,186 @@ electron_1.ipcMain.handle('dialog:openFolderForSave', async () => {
         return null;
     return result.filePaths[0];
 });
+function authFilePath() {
+    return path.join(electron_1.app.getPath('userData'), 'zymo-auth.json');
+}
+function readAuth() {
+    try {
+        return JSON.parse(fs.readFileSync(authFilePath(), 'utf-8'));
+    }
+    catch {
+        return null;
+    }
+}
+function writeAuth(data) {
+    fs.writeFileSync(authFilePath(), JSON.stringify(data, null, 2), 'utf-8');
+}
+function clearAuth() {
+    try {
+        fs.unlinkSync(authFilePath());
+    }
+    catch { /* ignore */ }
+}
+electron_1.ipcMain.handle('auth:login', async (_, intranetUrl, email, password) => {
+    try {
+        const base = intranetUrl.replace(/\/$/, '');
+        const params = new URLSearchParams({ username: email, password });
+        const tokenRes = await fetch(`${base}/auth/token`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: params.toString(),
+        });
+        if (!tokenRes.ok) {
+            let detail = 'Credenciales incorrectas';
+            try {
+                detail = (await tokenRes.json()).detail ?? detail;
+            }
+            catch { /* ignore */ }
+            return { ok: false, error: detail };
+        }
+        const { access_token } = await tokenRes.json();
+        // Obtener perfil del usuario
+        const meRes = await fetch(`${base}/auth/me`, {
+            headers: { Authorization: `Bearer ${access_token}` },
+        });
+        const user = meRes.ok ? await meRes.json() : {};
+        writeAuth({ token: access_token, user, intranetUrl: base, savedAt: Date.now() });
+        return { ok: true, user };
+    }
+    catch (e) {
+        return { ok: false, error: e instanceof Error ? e.message : 'Error de red' };
+    }
+});
+electron_1.ipcMain.handle('auth:logout', () => {
+    clearAuth();
+    return { ok: true };
+});
+electron_1.ipcMain.handle('auth:getSession', () => {
+    const d = readAuth();
+    if (!d)
+        return { loggedIn: false, token: '', user: {}, intranetUrl: '' };
+    return { loggedIn: true, token: d.token, user: d.user, intranetUrl: d.intranetUrl };
+});
+electron_1.ipcMain.handle('auth:ping', async () => {
+    const d = readAuth();
+    if (!d?.token)
+        return { ok: false, loggedIn: false };
+    try {
+        const res = await fetch(`${d.intranetUrl}/api/netvault/auth/ping`, {
+            headers: { Authorization: `Bearer ${d.token}` },
+        });
+        if (!res.ok) {
+            clearAuth();
+            return { ok: false, loggedIn: false, error: 'Sesión expirada' };
+        }
+        const data = await res.json();
+        return { ok: true, loggedIn: true, user: data.user ?? d.user };
+    }
+    catch (e) {
+        return { ok: false, loggedIn: false, error: e instanceof Error ? e.message : 'Sin conexión' };
+    }
+});
+// ─── Intranet fetch proxy (evita CORS, añade Bearer automáticamente) ──────────
+electron_1.ipcMain.handle('netvault:fetch', async (_, endpoint, options = {}) => {
+    const d = readAuth();
+    if (!d?.token)
+        return { ok: false, status: 401, data: null, error: 'Sin sesión activa' };
+    try {
+        const res = await fetch(`${d.intranetUrl}${endpoint}`, {
+            method: options.method ?? 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${d.token}`,
+                ...(options.headers ?? {}),
+            },
+            body: options.body ?? undefined,
+        });
+        let data;
+        try {
+            data = await res.json();
+        }
+        catch {
+            data = null;
+        }
+        return { ok: res.ok, status: res.status, data };
+    }
+    catch (e) {
+        return { ok: false, status: 0, data: null, error: e instanceof Error ? e.message : 'Error de red' };
+    }
+});
+// ─── Cola de conversión PDF/DOCX → MD via intranet (SSE progress) ─────────────
+electron_1.ipcMain.handle('queue:convertFiles', async (event, filePaths, area) => {
+    const d = readAuth();
+    if (!d?.token)
+        return { ok: false, error: 'Sin sesión activa' };
+    // Construir multipart manualmente con boundary
+    const boundary = `----NetVaultBoundary${Date.now()}`;
+    const chunks = [];
+    const enc = (s) => Buffer.from(s, 'utf-8');
+    const CRLF = '\r\n';
+    // campo area
+    chunks.push(enc(`--${boundary}${CRLF}`));
+    chunks.push(enc(`Content-Disposition: form-data; name="area"${CRLF}${CRLF}`));
+    chunks.push(enc(`${area}${CRLF}`));
+    // archivos
+    for (const fp of filePaths) {
+        const name = path.basename(fp);
+        let content;
+        try {
+            content = fs.readFileSync(fp);
+        }
+        catch {
+            continue;
+        }
+        chunks.push(enc(`--${boundary}${CRLF}`));
+        chunks.push(enc(`Content-Disposition: form-data; name="archivos"; filename="${name}"${CRLF}`));
+        chunks.push(enc(`Content-Type: application/octet-stream${CRLF}${CRLF}`));
+        chunks.push(content);
+        chunks.push(enc(CRLF));
+    }
+    chunks.push(enc(`--${boundary}--${CRLF}`));
+    const body = Buffer.concat(chunks);
+    const url = `${d.intranetUrl}/api/netvault/documentos/convertir`;
+    const http = url.startsWith('https') ? require('https') : require('http');
+    const urlObj = new URL(url);
+    return new Promise((resolve) => {
+        const req = http.request({
+            hostname: urlObj.hostname,
+            port: urlObj.port || (url.startsWith('https') ? 443 : 80),
+            path: urlObj.pathname,
+            method: 'POST',
+            headers: {
+                'Content-Type': `multipart/form-data; boundary=${boundary}`,
+                'Content-Length': body.length,
+                Authorization: `Bearer ${d.token}`,
+            },
+        }, (res) => {
+            let buf = '';
+            res.on('data', (chunk) => {
+                buf += chunk.toString('utf-8');
+                const lines = buf.split('\n');
+                buf = lines.pop() ?? '';
+                for (const line of lines) {
+                    const trimmed = line.trim();
+                    if (!trimmed.startsWith('data: '))
+                        continue;
+                    try {
+                        const parsed = JSON.parse(trimmed.slice(6));
+                        event.sender.send('queue:progress', parsed);
+                        if (parsed['done'])
+                            resolve({ ok: true, resultados: parsed['resultados'] });
+                    }
+                    catch { /* continuar */ }
+                }
+            });
+            res.on('end', () => resolve({ ok: true }));
+            res.on('error', (e) => resolve({ ok: false, error: e.message }));
+        });
+        req.on('error', (e) => resolve({ ok: false, error: e.message }));
+        req.write(body);
+        req.end();
+    });
+});
 // ─────────────────────────────────────────────────────────────────────────────
 // App lifecycle
 electron_1.app.whenReady().then(() => {
