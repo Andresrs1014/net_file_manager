@@ -24,6 +24,8 @@ const electronAPI = {
   openFolderDialog: () => ipcRenderer.invoke('dialog:openFolder'),
   openFileDialog: (filters?: { name: string; extensions: string[] }[]) =>
     ipcRenderer.invoke('dialog:openFile', filters),
+  openFilesDialog: (filters?: { name: string; extensions: string[] }[]) =>
+    ipcRenderer.invoke('dialog:openFiles', filters),
   saveFileDialog: (defaultPath?: string, filters?: { name: string; extensions: string[] }[]) =>
     ipcRenderer.invoke('dialog:saveFile', defaultPath, filters),
   showMessage: (options: { type?: string; title?: string; message: string; detail?: string; buttons?: string[] }) =>

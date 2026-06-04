@@ -37,7 +37,7 @@ export const config = {
   },
   anthropic: {
     apiKey: optional('ANTHROPIC_API_KEY', ''),
-    model: optional('CLAUDE_MODEL', 'claude-opus-4-5'),
+    model: optional('CLAUDE_MODEL', 'claude-opus-4-5-20251001'),
   },
   corsOrigins: optional('CORS_ORIGINS', 'app://.,http://localhost:5173').split(',').map((s) => s.trim()),
   intranet: {

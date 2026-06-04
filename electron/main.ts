@@ -237,6 +237,17 @@ ipcMain.handle('dialog:openFile', async (_, filters?: { name: string; extensions
   return result.canceled ? null : result.filePaths[0];
 });
 
+ipcMain.handle('dialog:openFiles', async (_, filters?: { name: string; extensions: string[] }[]) => {
+  const result = await dialog.showOpenDialog(mainWindow!, {
+    properties: ['openFile', 'multiSelections'],
+    filters: filters || [
+      { name: 'Documentos', extensions: ['pdf', 'docx', 'doc', 'md', 'txt'] },
+      { name: 'Todos los archivos', extensions: ['*'] },
+    ],
+  });
+  return result.canceled ? [] : result.filePaths;
+});
+
 ipcMain.handle('dialog:saveFile', async (_, defaultPath?: string, filters?: { name: string; extensions: string[] }[]) => {
   const result = await dialog.showSaveDialog(mainWindow!, {
     defaultPath,

@@ -2,7 +2,7 @@
  * ConversionQueue — cola de conversión PDF/DOCX → Markdown via intranet.
  *
  * Flujo:
- *   1. El usuario elige archivos con el diálogo nativo.
+ *   1. El usuario elige archivos con el diálogo nativo (multi-select).
  *   2. Se lanza `queue:convertFiles` IPC que envía los archivos al servidor.
  *   3. El servidor devuelve progreso por SSE; el main lo relay-a por `queue:progress`.
  *   4. El componente muestra el progreso en tiempo real.
@@ -11,6 +11,7 @@ import { useState, useEffect, useRef } from 'react';
 import { FileText, Upload, CheckCircle2, XCircle, Loader2, FolderOpen, X, ChevronDown } from 'lucide-react';
 
 interface ConversionItem {
+  path:    string;
   nombre:  string;
   estado:  'pending' | 'converting' | 'done' | 'error';
   mensaje: string;
@@ -26,10 +27,10 @@ interface Props {
 const ipc = () => (window.electronAPI as any);
 
 export function ConversionQueue({ area, onClose, onFinish }: Props) {
-  const [items,    setItems]    = useState<ConversionItem[]>([]);
-  const [running,  setRunning]  = useState(false);
-  const [finished, setFinished] = useState(false);
-  const [error,    setError]    = useState<string | null>(null);
+  const [items,     setItems]     = useState<ConversionItem[]>([]);
+  const [running,   setRunning]   = useState(false);
+  const [finished,  setFinished]  = useState(false);
+  const [error,     setError]     = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(false);
   const unsubRef = useRef<(() => void) | null>(null);
 
@@ -37,12 +38,13 @@ export function ConversionQueue({ area, onClose, onFinish }: Props) {
   useEffect(() => () => { unsubRef.current?.(); }, []);
 
   const pickFiles = async () => {
-    const files: string[] | null = await ipc().openFileDialog([
+    const paths: string[] = await ipc().openFilesDialog([
       { name: 'Documentos', extensions: ['pdf', 'docx', 'doc', 'txt', 'md'] },
     ]);
-    if (!files?.length) return;
-    setItems(files.map(f => ({
-      nombre:  f.split('\\').pop() ?? f.split('/').pop() ?? f,
+    if (!paths.length) return;
+    setItems(paths.map(p => ({
+      path:    p,
+      nombre:  p.split('\\').pop() ?? p.split('/').pop() ?? p,
       estado:  'pending',
       mensaje: 'En cola',
     })));
@@ -55,24 +57,12 @@ export function ConversionQueue({ area, onClose, onFinish }: Props) {
     setRunning(true);
     setError(null);
 
-    // Reconstruimos la lista de paths desde los nombres (necesitamos los paths completos)
-    // El usuario debería pasar los paths — en pickFiles guardamos el path completo pero
-    // para el ítem sólo guardamos el nombre. Necesitamos mantener paths separados.
-    // Aquí usamos la misma lista re-pidiendo los paths via diálogo (simplificado).
-    // En producción se pasarían directamente. Para esta iteración reusamos pickFiles.
-    const pathsRaw: string[] | null = await ipc().openFileDialog([
-      { name: 'Documentos', extensions: ['pdf', 'docx', 'doc', 'txt', 'md'] },
-    ]);
-    if (!pathsRaw?.length) { setRunning(false); return; }
+    const paths = items.map(i => i.path);
 
-    // Actualizar items con los archivos seleccionados
-    setItems(pathsRaw.map(p => ({
-      nombre:  p.split('\\').pop() ?? p.split('/').pop() ?? p,
-      estado:  'converting' as const,
-      mensaje: 'Enviando…',
-    })));
+    // Marcar todos como "enviando"
+    setItems(prev => prev.map(it => ({ ...it, estado: 'converting', mensaje: 'Enviando…' })));
 
-    // Subscribirse a progreso
+    // Suscribirse a progreso SSE
     unsubRef.current?.();
     unsubRef.current = ipc().onQueueProgress((data: Record<string, unknown>) => {
       const nombre  = (data['nombre'] as string) ?? '';
@@ -82,7 +72,11 @@ export function ConversionQueue({ area, onClose, onFinish }: Props) {
       if (nombre) {
         setItems(prev => prev.map(it =>
           it.nombre === nombre
-            ? { ...it, estado: estadoR === 'done' ? 'done' : estadoR === 'error' ? 'error' : 'converting', mensaje: msg }
+            ? {
+                ...it,
+                estado:  estadoR === 'done' ? 'done' : estadoR === 'error' ? 'error' : 'converting',
+                mensaje: msg,
+              }
             : it,
         ));
       }
@@ -95,11 +89,13 @@ export function ConversionQueue({ area, onClose, onFinish }: Props) {
       }
     });
 
-    const result = await ipc().queueConvertFiles(pathsRaw, area);
+    const result = await ipc().queueConvertFiles(paths, area);
     if (!result?.ok) {
       setError(result?.error ?? 'Error al conectar con la intranet');
       setRunning(false);
-      setItems(prev => prev.map(it => it.estado === 'converting' ? { ...it, estado: 'error', mensaje: 'Falló' } : it));
+      setItems(prev => prev.map(it =>
+        it.estado === 'converting' ? { ...it, estado: 'error', mensaje: 'Falló' } : it,
+      ));
     }
   };
 
@@ -183,7 +179,7 @@ export function ConversionQueue({ area, onClose, onFinish }: Props) {
                          text-xs text-[#ccc] transition-colors"
             >
               <FolderOpen className="w-3.5 h-3.5" />
-              Elegir archivos
+              {items.length ? `${items.length} archivo${items.length > 1 ? 's' : ''}` : 'Elegir archivos'}
             </button>
             <button
               onClick={startConversion}
