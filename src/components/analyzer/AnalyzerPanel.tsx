@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import {
   Server, LogIn, LogOut, RefreshCw, FileText, Play, GitBranch,
   AlertTriangle, CheckCircle, Clock, Lightbulb,
-  Database, Download, X, ChevronDown, Loader
+  Database, Download, X, ChevronDown, Loader, Send
 } from 'lucide-react';
 import type { AnalysisPackage, ProcedureArea, UserRole, FindingSeverity } from '../../types';
 import { MermaidPreview } from './MermaidPreview';
@@ -13,6 +13,8 @@ import {
   buildPackageFiles,
   isAnalyzableFile,
 } from '../../services/procedureAnalysisService';
+import { getStoredSession } from '../../services/authService';
+import { SigCommitModal } from '../sig/SigCommitModal';
 
 // ─── Sub-componentes de resultado ─────────────────────────────────────────────
 
@@ -232,6 +234,8 @@ export function AnalyzerPanel({ onClose, filePath, defaultOutputRoot, onAnalysis
   const [rubricMarkdown, setRubricMarkdown] = useState('');
   const [loadingDoc, setLoadingDoc] = useState(false);
   const [existingFlowchart, setExistingFlowchart] = useState('');
+  const [showSigModal, setShowSigModal] = useState(false);
+  const [intranetLoggedIn, setIntranetLoggedIn] = useState(false);
 
   const api = window.electronAPI;
 
@@ -273,6 +277,7 @@ export function AnalyzerPanel({ onClose, filePath, defaultOutputRoot, onAnalysis
     checkHealth();
     loadRubric();
     if (defaultOutputRoot) setOutputRoot(defaultOutputRoot);
+    getStoredSession().then((s) => setIntranetLoggedIn(s.loggedIn));
   }, []);
 
   useEffect(() => {
@@ -430,6 +435,14 @@ export function AnalyzerPanel({ onClose, filePath, defaultOutputRoot, onAnalysis
             )}
             {result && (
               <>
+                {intranetLoggedIn && (
+                  <button
+                    onClick={() => setShowSigModal(true)}
+                    className="flex items-center gap-1 px-3 py-1.5 text-xs bg-emerald-700/80 hover:bg-emerald-600 text-white rounded-lg transition-colors"
+                  >
+                    <Send size={12} /> Enviar a SIG
+                  </button>
+                )}
                 <button
                   onClick={handleSavePackage}
                   className="flex items-center gap-1 px-3 py-1.5 text-xs bg-purple-600/80 hover:bg-purple-500 text-white rounded-lg transition-colors"
@@ -712,6 +725,18 @@ export function AnalyzerPanel({ onClose, filePath, defaultOutputRoot, onAnalysis
           </div>
         </div>
       </div>
+
+      {showSigModal && result && (
+        <SigCommitModal
+          pkg={result}
+          textContent={textContent}
+          onClose={() => setShowSigModal(false)}
+          onSuccess={(id) => {
+            setShowSigModal(false);
+            console.info('[SIG] Commit enviado, id:', id);
+          }}
+        />
+      )}
     </div>
   );
 }

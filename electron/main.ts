@@ -873,12 +873,12 @@ ipcMain.handle('auth:ping', async () => {
   const d = readAuth();
   if (!d?.token) return { ok: false, loggedIn: false };
   try {
-    const res = await fetch(`${d.intranetUrl}/api/netvault/auth/ping`, {
+    const res = await fetch(`${d.intranetUrl}/auth/me`, {
       headers: { Authorization: `Bearer ${d.token}` },
     });
     if (!res.ok) { clearAuth(); return { ok: false, loggedIn: false, error: 'Sesión expirada' }; }
-    const data = await res.json() as { user?: Record<string, unknown> };
-    return { ok: true, loggedIn: true, user: data.user ?? d.user };
+    const user = await res.json() as Record<string, unknown>;
+    return { ok: true, loggedIn: true, user: user ?? d.user };
   } catch (e: unknown) {
     return { ok: false, loggedIn: false, error: e instanceof Error ? e.message : 'Sin conexión' };
   }
