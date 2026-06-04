@@ -68,8 +68,7 @@ const electronAPI = {
     opts?: { maxNodes?: number; maxEdges?: number; q?: string },
   ) => ipcRenderer.invoke('graph:lightrag', intranetUrl, token, opts ?? {}),
 
-  // ─── NetVault Server API ─────────────────────────────────────────────────
-  // El JWT nunca toca el renderer; toda autenticación pasa por el main process.
+  // ─── NetVault Server API (modo standalone / offline) ─────────────────────
   serverGetUrl: () => ipcRenderer.invoke('server:getUrl'),
   serverSetUrl: (url: string) => ipcRenderer.invoke('server:setUrl', url),
   serverHealth: () => ipcRenderer.invoke('server:health'),
@@ -94,6 +93,33 @@ const electronAPI = {
     originalPath?: string;
   }) => ipcRenderer.invoke('analysis:savePackage', payload),
   openFolderForSave: () => ipcRenderer.invoke('dialog:openFolderForSave'),
+
+  // ─── Auth ZYMO Intranet ────────────────────────────────────────────────────
+  // El JWT NUNCA toca el renderer directamente; sólo el main process lo guarda/usa.
+  auth: {
+    login:      (intranetUrl: string, email: string, password: string) =>
+      ipcRenderer.invoke('auth:login', intranetUrl, email, password),
+    logout:     () => ipcRenderer.invoke('auth:logout'),
+    getSession: () => ipcRenderer.invoke('auth:getSession'),
+    ping:       () => ipcRenderer.invoke('auth:ping'),
+  },
+
+  // Proxy fetch a la intranet (añade Bearer y base URL automáticamente)
+  netvaultFetch: (
+    endpoint: string,
+    options?: { method?: string; body?: string; headers?: Record<string, string> },
+  ) => ipcRenderer.invoke('netvault:fetch', endpoint, options ?? {}),
+
+  // Cola de conversión PDF/DOCX → MD
+  queueConvertFiles: (filePaths: string[], area: string) =>
+    ipcRenderer.invoke('queue:convertFiles', filePaths, area),
+
+  // Escuchar progreso de la cola (SSE relay desde main)
+  onQueueProgress: (cb: (data: Record<string, unknown>) => void) => {
+    const handler = (_: unknown, data: Record<string, unknown>) => cb(data);
+    ipcRenderer.on('queue:progress', handler);
+    return () => ipcRenderer.removeListener('queue:progress', handler);
+  },
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);
