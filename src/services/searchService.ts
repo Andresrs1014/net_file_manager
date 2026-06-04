@@ -21,9 +21,26 @@ export interface SearchOptions {
 class SearchService {
   private lastIndexedPath = '';
 
-  async indexDirectory(path: string): Promise<number> {
-    const count = await fastIndexer.indexDirectory(path, 5);
-    this.lastIndexedPath = path;
+  async indexDirectory(dirPath: string): Promise<number> {
+    // Primary: main-process scanner (no IPC per directory, full stats)
+    const api = window.electronAPI as typeof window.electronAPI & {
+      scanIndex?: (rootPath: string, maxDepth: number) => Promise<{ success: boolean; count: number; entries: any[] }>;
+    };
+    if (api.scanIndex) {
+      try {
+        const result = await api.scanIndex(dirPath, 5);
+        if (result.success && result.entries.length > 0) {
+          fastIndexer.loadEntries(result.entries);
+          this.lastIndexedPath = dirPath;
+          return result.count;
+        }
+      } catch (e) {
+        console.warn('Main-process indexer failed, falling back to renderer scan:', e);
+      }
+    }
+    // Fallback: renderer-side IPC scan (legacy, slower)
+    const count = await fastIndexer.indexDirectory(dirPath, 5);
+    this.lastIndexedPath = dirPath;
     return count;
   }
 

@@ -31,11 +31,41 @@ const electronAPI = {
     writeConfig: (config) => electron_1.ipcRenderer.invoke('config:write', config),
     // Terminal
     executeCommand: (cmd, cwd) => electron_1.ipcRenderer.invoke('terminal:execute', cmd, cwd),
+    onTerminalStream: (cb) => {
+        const handler = (_, data) => cb(data);
+        electron_1.ipcRenderer.on('terminal:stream', handler);
+        return () => electron_1.ipcRenderer.removeListener('terminal:stream', handler);
+    },
     // AI - Ollama chat (bypasses CORS via main process)
     chatWithOllama: (model, messages) => electron_1.ipcRenderer.invoke('ollama:chat', model, messages),
     // Code editors detection
     detectEditors: () => electron_1.ipcRenderer.invoke('editors:detect'),
     openWithEditor: (editorPath, filePath) => electron_1.ipcRenderer.invoke('editors:openWith', editorPath, filePath),
+    // System paths
+    getSystemPaths: () => electron_1.ipcRenderer.invoke('system:getPaths'),
+    getAppRoot: () => electron_1.ipcRenderer.invoke('system:getAppRoot'),
+    // Main-process indexer (faster: single IPC instead of N readDir calls)
+    scanIndex: (rootPath, maxDepth) => electron_1.ipcRenderer.invoke('index:scan', rootPath, maxDepth ?? 5),
+    getIndexStats: () => electron_1.ipcRenderer.invoke('index:stats'),
+    loadIndexCache: () => electron_1.ipcRenderer.invoke('index:loadCache'),
+    // Grafo vault — listado .md en un solo IPC
+    scanVaultMarkdown: (rootPath) => electron_1.ipcRenderer.invoke('graph:scanMarkdown', rootPath),
+    // Grafo LightRAG — proxy HTTP para evitar CORS
+    loadLightRagGraph: (intranetUrl, token, opts) => electron_1.ipcRenderer.invoke('graph:lightrag', intranetUrl, token, opts ?? {}),
+    // ─── NetVault Server API ─────────────────────────────────────────────────
+    // El JWT nunca toca el renderer; toda autenticación pasa por el main process.
+    serverGetUrl: () => electron_1.ipcRenderer.invoke('server:getUrl'),
+    serverSetUrl: (url) => electron_1.ipcRenderer.invoke('server:setUrl', url),
+    serverHealth: () => electron_1.ipcRenderer.invoke('server:health'),
+    serverLogin: (username, password) => electron_1.ipcRenderer.invoke('server:login', username, password),
+    serverLogout: () => electron_1.ipcRenderer.invoke('server:logout'),
+    serverSession: () => electron_1.ipcRenderer.invoke('server:session'),
+    serverRunAnalysis: (payload) => electron_1.ipcRenderer.invoke('server:runAnalysis', payload),
+    serverGetRubric: () => electron_1.ipcRenderer.invoke('server:getRubric'),
+    // Análisis — formato único en disco
+    analysisGetLocalRubric: () => electron_1.ipcRenderer.invoke('analysis:getLocalRubric'),
+    analysisSavePackage: (payload) => electron_1.ipcRenderer.invoke('analysis:savePackage', payload),
+    openFolderForSave: () => electron_1.ipcRenderer.invoke('dialog:openFolderForSave'),
 };
 electron_1.contextBridge.exposeInMainWorld('electronAPI', electronAPI);
 //# sourceMappingURL=preload.js.map

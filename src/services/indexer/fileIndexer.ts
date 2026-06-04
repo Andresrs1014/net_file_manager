@@ -1,6 +1,7 @@
 /**
- * Fast File Indexer - In-memory index for ultra-fast search
+ * Fast File Indexer - In-memory index with Fuse.js fuzzy search
  */
+import Fuse from 'fuse.js';
 
 export interface IndexedFile {
   name: string;
@@ -20,6 +21,41 @@ export interface IndexStats {
 class FastIndexer {
   private index: Map<string, IndexedFile> = new Map();
   private extensionsIndex: Map<string, Set<string>> = new Map();
+  private fuse: Fuse<IndexedFile> | null = null;
+
+  private rebuildFuse(): void {
+    this.fuse = new Fuse(Array.from(this.index.values()), {
+      keys: ['name'],
+      threshold: 0.35,
+      includeScore: true,
+      minMatchCharLength: 1,
+    });
+  }
+
+  /** Load pre-scanned entries from main process (one IPC call replaces N readDirectory calls) */
+  loadEntries(entries: { name: string; path: string; isDirectory: boolean; size: number; modified: number; extension: string }[]): number {
+    this.index.clear();
+    this.extensionsIndex.clear();
+    for (const e of entries) {
+      const file: IndexedFile = {
+        name: e.name,
+        path: e.path,
+        isDirectory: e.isDirectory,
+        size: e.size,
+        modified: new Date(e.modified),
+        extension: e.extension,
+      };
+      this.index.set(e.path, file);
+      if (e.extension && !e.isDirectory) {
+        if (!this.extensionsIndex.has(e.extension)) {
+          this.extensionsIndex.set(e.extension, new Set());
+        }
+        this.extensionsIndex.get(e.extension)!.add(e.path);
+      }
+    }
+    this.rebuildFuse();
+    return this.index.size;
+  }
 
   async indexDirectory(dirPath: string, maxDepth = 5): Promise<number> {
     let count = 0;
@@ -41,7 +77,7 @@ class FastIndexer {
         
         this.index.set(entry.path, file);
         
-        if (ext) {
+        if (ext && !entry.isDirectory) {
           if (!this.extensionsIndex.has(ext)) {
             this.extensionsIndex.set(ext, new Set());
           }
@@ -55,6 +91,8 @@ class FastIndexer {
           count += await this.recurseIndex(entry.path, maxDepth - 1);
         }
       }
+      // Rebuild Fuse after indexing
+      this.rebuildFuse();
     } catch (error) {
       console.error('Index error:', error);
     }
@@ -69,83 +107,79 @@ class FastIndexer {
     try {
       const entries = await window.electronAPI.readDirectory(dirPath);
       for (const entry of entries) {
+        const ext = entry.name.includes('.') ? '.' + entry.name.split('.').pop()!.toLowerCase() : '';
+
+        const file: IndexedFile = {
+          name: entry.name,
+          path: entry.path,
+          isDirectory: entry.isDirectory,
+          size: entry.size || 0,
+          modified: entry.modified ? new Date(entry.modified) : new Date(),
+          extension: ext,
+        };
+
+        this.index.set(entry.path, file);
+
+        if (ext && !entry.isDirectory) {
+          if (!this.extensionsIndex.has(ext)) {
+            this.extensionsIndex.set(ext, new Set());
+          }
+          this.extensionsIndex.get(ext)!.add(entry.path);
+        }
+
+        count++;
+
         if (entry.isDirectory) {
-          count++;
           count += await this.recurseIndex(entry.path, remainingDepth - 1);
         }
       }
     } catch {
-      // Ignore permission errors
+      // Ignore permission errors on protected directories
     }
     return count;
   }
 
   search(query: string, options: { extensions?: string[]; maxResults?: number; fuzzy?: boolean } = {}): IndexedFile[] {
     const { extensions = [], maxResults = 50, fuzzy = true } = options;
-    const lowerQuery = query.toLowerCase();
-    
-    let results: IndexedFile[] = [];
-    
-    // Filter by extension first
-    if (extensions.length > 0) {
-      const extSet = new Set(extensions.map(e => e.startsWith('.') ? e : '.' + e));
-      extSet.forEach(ext => {
-        const files = this.extensionsIndex.get(ext);
-        files?.forEach(path => {
-          const file = this.index.get(path);
-          if (file) results.push(file);
-        });
-      });
+
+    if (!query.trim()) return [];
+
+    let results: IndexedFile[];
+
+    if (fuzzy && this.fuse) {
+      // Fuse.js path: accurate fuzzy search
+      let fuseResults = this.fuse.search(query, { limit: maxResults * 2 });
+      if (extensions.length > 0) {
+        const extSet = new Set(extensions.map(e => e.startsWith('.') ? e : '.' + e));
+        fuseResults = fuseResults.filter(r => extSet.has(r.item.extension) || r.item.isDirectory);
+      }
+      results = fuseResults.slice(0, maxResults).map(r => r.item);
     } else {
-      results = Array.from(this.index.values());
-    }
-    
-    // Filter by query
-    results = results.filter(file => {
-      if (fuzzy) {
-        return file.name.toLowerCase().includes(lowerQuery) || this.fuzzyMatch(file.name, query) > 0.5;
+      // Fast prefix/substring path
+      const lowerQuery = query.toLowerCase();
+      let pool: IndexedFile[];
+      if (extensions.length > 0) {
+        pool = [];
+        const extSet = new Set(extensions.map(e => e.startsWith('.') ? e : '.' + e));
+        extSet.forEach(ext => {
+          const files = this.extensionsIndex.get(ext);
+          files?.forEach(p => {
+            const file = this.index.get(p);
+            if (file) pool.push(file);
+          });
+        });
       } else {
-        return file.name.toLowerCase().startsWith(lowerQuery);
+        pool = Array.from(this.index.values());
       }
-    });
-    
-    // Sort
-    results.sort((a, b) => a.name.localeCompare(b.name));
-    
-    return results.slice(0, maxResults);
-  }
-
-  private fuzzyMatch(text: string, query: string): number {
-    const lowerText = text.toLowerCase();
-    const lowerQuery = query.toLowerCase();
-    
-    if (lowerText.includes(lowerQuery)) return 0.9;
-    
-    const maxLen = Math.max(text.length, query.length);
-    if (maxLen === 0) return 0;
-    
-    const distance = this.levenshtein(lowerText.substring(0, 20), lowerQuery.substring(0, 20));
-    return 1 - (distance / maxLen);
-  }
-
-  private levenshtein(a: string, b: string): number {
-    const matrix: number[][] = [];
-    
-    for (let i = 0; i <= b.length; i++) matrix[i] = [i];
-    for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
-    
-    for (let i = 1; i <= b.length; i++) {
-      for (let j = 1; j <= a.length; j++) {
-        if (b.charAt(i - 1) === a.charAt(j - 1)) {
-          matrix[i][j] = matrix[i - 1][j - 1];
-        } else {
-          matrix[i][j] = 1 + Math.min(matrix[i - 1][j - 1], matrix[i][j - 1], matrix[i - 1][j]);
-        }
-      }
+      results = pool
+        .filter(f => f.name.toLowerCase().includes(lowerQuery))
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .slice(0, maxResults);
     }
-    
-    return matrix[b.length][a.length];
+
+    return results;
   }
+
 
   prefixSearch(prefix: string, maxResults = 20): IndexedFile[] {
     const lowerPrefix = prefix.toLowerCase();
@@ -163,6 +197,7 @@ class FastIndexer {
   clear(): void {
     this.index.clear();
     this.extensionsIndex.clear();
+    this.fuse = null;
   }
 
   getStats(): IndexStats {

@@ -103,21 +103,131 @@ Esto determina qué modelos de Ollama usar:
 
 ---
 
+## Ola 0 — Estabilización (2026-06-04) ✅
+
+Corrección de 7 bugs P0 que bloqueaban el uso básico del gestor:
+
+| # | Fix | Archivos |
+|---|-----|---------|
+| 0.1 | `recurseIndex` ahora indexa **archivos y carpetas** en subcarpetas (con `size`/`modified`) | `fileIndexer.ts` |
+| 0.2 | `handleReindex` llama `searchService.indexDirectory(currentPath)` real | `SearchBar.tsx` |
+| 0.3 | Crear archivo/carpeta: `InputDialog.onConfirm(name)` usado correctamente | `FilePanel.tsx` |
+| 0.4 | `fs:copy` copia árboles recursivos; `fs:delete` borra directorios con `fs.rm` | `electron/main.ts` |
+| 0.5 | Quick access carga rutas reales vía `app.getPath()` IPC `system:getPaths` | `App.tsx`, `main.ts` |
+| 0.6 | `LICENSE.txt` creado (MIT); `electron-builder.yml` deja de fallar | `LICENSE.txt` |
+| 0.7 | `scripts/build-info.js` path corregido a `../package.json` | `scripts/build-info.js` |
+
+## Ola 1 — Indexador en Main Process (2026-06-04) ✅
+
+Movimiento del indexador al main process para eliminar N IPC calls y añadir Fuse.js:
+
+| # | Feature | Notas |
+|---|---------|-------|
+| 1.1 | IPC `index:scan` — escanea árbol en main con `Promise.all` stats | `electron/main.ts` |
+| 1.2 | Caché JSON en `%APPDATA%/NetVault/index-cache.json` | `electron/main.ts` |
+| 1.3 | **Fuse.js** reemplaza Levenshtein en renderer; `loadEntries()` en FastIndexer | `fileIndexer.ts`, `searchService.ts` |
+| 1.4 | `autoIndex` debounced (800ms) en App.tsx al cambiar path activo | `App.tsx` |
+| 1.5 | `scripts/bench-index.mjs` — benchmark Node.js (baseline para Rust Fase 9) | `scripts/bench-index.mjs` |
+| 1.6 | `fs:readDir` ahora retorna `size` + `modified` (stat en paralelo) | `electron/main.ts` |
+
+> **Fuse.js (fase 5):** confirmado integrado en renderer como motor de búsqueda fuzzy.  
+> **Levenshtein manual:** eliminado, sustituido por Fuse.js threshold 0.35.
+
+## Ola 2 — Layout Workbench (2026-06-04) ✅
+
+Remodelación de UI basada en `INVESTIGACION_UI_NETVAULT.md` (VS Code workbench pattern):
+
+| # | Componente | Descripción |
+|---|-----------|-------------|
+| 2.1 | `ActivityBar` | Barra lateral izquierda: Explorador, Búsqueda, Análisis, Grafo, Sync |
+| 2.2 | Sidebar contextual | Contenido de sidebar cambia según vista activa |
+| 2.3 | Tab bar | Pestañas en área central: Archivos + DocumentViewer por tab (no modal) |
+| 2.4 | `SecondarySidebar` | Panel secundario derecho para resultados de análisis (placeholder) |
+| 2.5 | `StatusBar` | Barra de estado: ruta, índice, sync placeholder, costo placeholder, `⌘K` |
+| 2.6 | `CommandPalette` | Paleta de comandos `Ctrl+K` con búsqueda, ↑↓ navegación, grupos |
+| 2.7 | `App.tsx` workbench | Layout completo: ActivityBar + PrimarySidebar + CentralTabs + StatusBar |
+
+> **Toolbar anterior eliminada** — sus funciones migradas a CommandPalette y ActivityBar.  
+> **DocumentViewer**: ahora abre como pestaña, no como modal.  
+> **Ollama**: sigue disponible en `AIChat` pero marcado para migración a proxy servidor (Ola 3).
+
+---
+
 ## Fases Futuras (Plan)
 
-### Fase 9: Rust Fast-Indexer ⚙️
-- Indexador de archivos en Rust para máximo rendimiento
-- Objetivo: indexar >100K archivos en <1 segundo
-- bindings via npm para integración con Electron
-- **Pendiente de implementación**
+### Ola 3: Servidor + Auth (próxima)
+- Proyecto `server/` Express+TS: `/health`, `/auth/login`, `/analysis/run`
+- JWT en main process, sin API keys en renderer
+- Proxy Claude vía servidor (no directo desde `.exe`)
+
+### Fase 9 / Ola 6: Rust Fast-Indexer ⚙️
+- Crate `fast-indexer` (NDJSON stdout)
+- Objetivo: >100K archivos/s SSD
+- Benchmark baseline: `scripts/bench-index.mjs`
+- **Precondición: Ola 1 bench documentado** ✅
 
 > El usuario expresó interés en Rust/Go/C++ pero no tiene experiencia. Recomendación: Rust por ecosistema (cargo, crates.io, buena integración con Node).
 
-### Mejoras UI Pendientes
-- Rediseño de componentes con skill `frontend-design`
-- Animaciones y micro-interacciones
-- Typography personalizada
-- Review con `web-design-guidelines` antes de commits
+---
+
+## Mejoras UX/UI Implementadas ✅
+
+### Sistema de Iconos (Lucide React)
+- Reemplazo de emojis por iconos vectoriales profesionales
+- Iconos dinámicos según tipo de archivo (carpeta, documento, imagen, video, código, etc.)
+- Consistencia visual en toda la aplicación
+
+### Animaciones y Micro-interacciones
+- **Transiciones suaves**: Hover con scale, translate, y cambios de color
+- **Animaciones de entrada**: Fade-in, slide-up, slide-right
+- **Feedback visual**: Estados activos con indicadores pulsantes
+- **Easing functions**: Custom cubic-bezier para movimiento natural
+
+### CSS Global Mejorado
+```css
+:root {
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out-back: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+```
+
+### Toolbar Rediseñada
+- Logo con gradiente y sombra
+- Agrupación de herramientas por función
+- Dropdown para herramientas IA
+- Indicadores de estado activo
+- Shortcuts visibles
+
+### Sidebar Mejorado
+- Animación de entrada slide-right
+- Hover con translate-x
+- Stagger animations en items
+- Footer con branding
+- Botones para agregar favoritos/acceso rápido
+
+### ContextMenu Mejorado
+- Animación de entrada con scale + opacity
+- Backdrop blur
+- Hover con translate-x
+- Shortcuts visibles
+- Accesibilidad (role, aria)
+
+### FileItem Mejorado
+- Iconos dinámicos por tipo de archivo
+- Acciones rápidas visibles en hover
+- Indicador de selección animado
+- Soporte de teclado (Enter, Delete, F2)
+
+### Componentes Personalizados
+- `.btn-primary`, `.btn-secondary`, `.btn-icon`
+- `.list-item`, `.list-item.selected`
+- `.toast-success`, `.toast-error`, `.toast-warning`
+- `.animate-fade-in`, `.animate-slide-up`, `.animate-scale`
+
+---
+
+## Commits Principales (Branch zelda)
 
 ---
 

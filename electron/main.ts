@@ -19,10 +19,12 @@ function createWindow() {
     show: false,
   });
 
-  // Cargar la app
-  if (process.env.NODE_ENV === 'development') {
-    mainWindow.loadURL('http://localhost:5173');
-    mainWindow.webContents.openDevTools();
+  // En desarrollo (npm run electron:dev) cargar Vite; en build empaquetado, dist/
+  const isDev = !app.isPackaged;
+  if (isDev) {
+    const devUrl = process.env.VITE_DEV_SERVER_URL ?? 'http://localhost:5173';
+    mainWindow.loadURL(devUrl);
+    mainWindow.webContents.openDevTools({ mode: 'detach' });
   } else {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
@@ -40,14 +42,76 @@ function createWindow() {
 ipcMain.handle('fs:readDir', async (_, dirPath: string) => {
   try {
     const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
-    return entries.map(entry => ({
-      name: entry.name,
-      path: path.join(dirPath, entry.name),
-      isDirectory: entry.isDirectory(),
-      isFile: entry.isFile(),
+    return Promise.all(entries.map(async entry => {
+      const fullPath = path.join(dirPath, entry.name);
+      let size = 0;
+      let modified: Date | null = null;
+      try {
+        const stat = await fs.promises.stat(fullPath);
+        size = stat.size;
+        modified = stat.mtime;
+      } catch {
+        // ignore (permission errors, broken symlinks)
+      }
+      return {
+        name: entry.name,
+        path: fullPath,
+        isDirectory: entry.isDirectory(),
+        isFile: entry.isFile(),
+        size,
+        modified,
+      };
     }));
   } catch (error: any) {
     throw new Error(`No se pudo leer el directorio: ${error.message}`);
+  }
+});
+
+// ─── Grafo vault: escaneo .md en main (evita cientos de IPC readDir) ─────────
+const VAULT_SKIP_DIRS = new Set([
+  'node_modules', 'dist', '.git', 'venv', '.obsidian', 'dist-electron',
+  '__pycache__', '.cursor', 'build', 'coverage', '.venv',
+]);
+const VAULT_MAX_MD = 400;
+const VAULT_MAX_DEPTH = 10;
+
+async function vaultCollectMarkdown(
+  dirPath: string,
+  depth: number,
+  out: string[],
+): Promise<void> {
+  if (depth > VAULT_MAX_DEPTH || out.length >= VAULT_MAX_MD) return;
+  let entries: fs.Dirent[];
+  try {
+    entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (out.length >= VAULT_MAX_MD) break;
+    const fullPath = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      if (VAULT_SKIP_DIRS.has(entry.name) || entry.name.startsWith('.')) continue;
+      await vaultCollectMarkdown(fullPath, depth + 1, out);
+    } else if (/\.md$/i.test(entry.name)) {
+      out.push(fullPath);
+    }
+  }
+}
+
+ipcMain.handle('graph:scanMarkdown', async (_, rootPath: string) => {
+  try {
+    const root = path.resolve(rootPath);
+    const stat = await fs.promises.stat(root);
+    if (!stat.isDirectory()) {
+      return { success: false, root, files: [] as string[], count: 0, error: 'La ruta no es una carpeta' };
+    }
+    const files: string[] = [];
+    await vaultCollectMarkdown(root, 0, files);
+    return { success: true, root, files, count: files.length };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Error al escanear';
+    return { success: false, root: rootPath, files: [] as string[], count: 0, error: message };
   }
 });
 
@@ -61,8 +125,19 @@ ipcMain.handle('fs:stats', async (_, filePath: string) => {
   };
 });
 
+async function copyRecursive(src: string, dst: string): Promise<void> {
+  const stat = await fs.promises.stat(src);
+  if (stat.isDirectory()) {
+    await fs.promises.mkdir(dst, { recursive: true });
+    const entries = await fs.promises.readdir(src);
+    await Promise.all(entries.map(e => copyRecursive(path.join(src, e), path.join(dst, e))));
+  } else {
+    await fs.promises.copyFile(src, dst);
+  }
+}
+
 ipcMain.handle('fs:copy', async (_, src: string, dst: string) => {
-  await fs.promises.copyFile(src, dst);
+  await copyRecursive(src, dst);
 });
 
 ipcMain.handle('fs:move', async (_, src: string, dst: string) => {
@@ -71,7 +146,12 @@ ipcMain.handle('fs:move', async (_, src: string, dst: string) => {
 
 ipcMain.handle('fs:delete', async (_, filePath: string, permanent: boolean) => {
   if (permanent) {
-    await fs.promises.unlink(filePath);
+    const stat = await fs.promises.stat(filePath);
+    if (stat.isDirectory()) {
+      await fs.promises.rm(filePath, { recursive: true, force: true });
+    } else {
+      await fs.promises.unlink(filePath);
+    }
   } else {
     await shell.trashItem(filePath);
   }
@@ -178,6 +258,22 @@ ipcMain.handle('dialog:message', async (_, options: { type?: string; title?: str
   return result.response;
 });
 
+// IPC Handlers - System paths
+ipcMain.handle('system:getPaths', () => {
+  return {
+    home: app.getPath('home'),
+    downloads: app.getPath('downloads'),
+    documents: app.getPath('documents'),
+    desktop: app.getPath('desktop'),
+  };
+});
+
+ipcMain.handle('system:getAppRoot', () => {
+  return app.isPackaged
+    ? path.join(path.dirname(app.getPath('exe')), '..')
+    : path.join(__dirname, '..');
+});
+
 // IPC Handlers - Config
 ipcMain.handle('config:getPath', () => {
   return app.getPath('userData');
@@ -198,16 +294,58 @@ ipcMain.handle('config:write', async (_, config: object) => {
   await fs.promises.writeFile(configPath, JSON.stringify(config, null, 2), 'utf-8');
 });
 
-// IPC Handlers - Terminal
-ipcMain.handle('terminal:execute', async (_, cmd: string, cwd: string) => {
-  const { exec } = require('child_process');
-  return new Promise((resolve) => {
-    exec(cmd, { cwd }, (error: Error | null, stdout: string, stderr: string) => {
-      if (error) {
-        resolve(stderr || error.message);
-      } else {
-        resolve(stdout);
+// ─── Terminal ────────────────────────────────────────────────────────────────
+
+/** Remove ANSI escape codes and control characters from terminal output */
+function stripAnsi(str: string): string {
+  return str
+    .replace(/\x1B\[[0-9;]*[A-Za-z]/g, '')   // CSI sequences (colors, cursor)
+    .replace(/\x1B\][^\x07]*\x07/g, '')        // OSC sequences (title)
+    .replace(/\x1B[()][0-9A-Za-z]/g, '')       // charset sequences
+    .replace(/\x1B[@-_]/g, '')                  // Fe sequences
+    .replace(/\r\n/g, '\n')                     // normalize CRLF
+    .replace(/\r(?!\n)/g, '\n');               // lone CR
+}
+
+ipcMain.handle('terminal:execute', (event, cmd: string, cwd: string) => {
+  const { spawn } = require('child_process');
+
+  return new Promise<string>((resolve) => {
+    const proc = spawn(
+      'powershell.exe',
+      ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', cmd],
+      {
+        cwd,
+        windowsHide: true,
+        env: { ...process.env, TERM: 'dumb', NO_COLOR: '1' },
       }
+    );
+
+    let fullOutput = '';
+
+    const sendChunk = (text: string, isErr: boolean) => {
+      const clean = stripAnsi(text);
+      if (!clean) return;
+      fullOutput += clean;
+      // Stream chunk to renderer while command is still running
+      if (!event.sender.isDestroyed()) {
+        event.sender.send('terminal:stream', { type: isErr ? 'stderr' : 'stdout', text: clean });
+      }
+    };
+
+    proc.stdout.on('data', (chunk: Buffer) => sendChunk(chunk.toString('utf8'), false));
+    proc.stderr.on('data', (chunk: Buffer) => sendChunk(chunk.toString('utf8'), true));
+
+    proc.on('error', (err: Error) => {
+      sendChunk(`Error al ejecutar: ${err.message}\n`, true);
+      resolve(fullOutput || err.message);
+    });
+
+    proc.on('close', (code: number | null) => {
+      if (!event.sender.isDestroyed()) {
+        event.sender.send('terminal:stream', { type: 'done', code });
+      }
+      resolve(fullOutput);
     });
   });
 });
@@ -318,6 +456,352 @@ ipcMain.handle('editors:openWith', async (_, editorPath: string, filePath: strin
     }
   });
 });
+
+// ─── Main-process file indexer ───────────────────────────────────────────────
+
+interface IndexEntry {
+  name: string;
+  path: string;
+  isDirectory: boolean;
+  size: number;
+  modified: number;
+  extension: string;
+}
+
+let indexEntries: IndexEntry[] = [];
+let indexing = false;
+const INDEX_CACHE_FILE = 'index-cache.json';
+
+async function scanDir(dirPath: string, depth: number, results: IndexEntry[]): Promise<void> {
+  if (depth <= 0) return;
+  let entries: fs.Dirent[];
+  try {
+    entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  await Promise.all(entries.map(async entry => {
+    const fullPath = path.join(dirPath, entry.name);
+    const isDir = entry.isDirectory();
+    let size = 0;
+    let modified = Date.now();
+    try {
+      const stat = await fs.promises.stat(fullPath);
+      size = stat.size;
+      modified = stat.mtimeMs;
+    } catch {
+      // ignore permission errors
+    }
+    const ext = isDir ? '' : (entry.name.includes('.') ? '.' + entry.name.split('.').pop()!.toLowerCase() : '');
+    results.push({ name: entry.name, path: fullPath, isDirectory: isDir, size, modified, extension: ext });
+    if (isDir) await scanDir(fullPath, depth - 1, results);
+  }));
+}
+
+// ─── LightRAG graph proxy (evita CORS desde renderer) ────────────────────────
+ipcMain.handle('graph:lightrag', async (
+  _,
+  intranetUrl: string,
+  token: string,
+  opts: { maxNodes?: number; maxEdges?: number; q?: string } = {},
+) => {
+  try {
+    const base   = intranetUrl.replace(/\/$/, '');
+    const params = new URLSearchParams({
+      max_nodes: String(opts.maxNodes ?? 200),
+      max_edges: String(opts.maxEdges ?? 600),
+      ...(opts.q ? { q: opts.q } : {}),
+    });
+    const url  = `${base}/api/grafo/lightrag?${params}`;
+    const http = url.startsWith('https') ? require('https') : require('http');
+
+    const body: string = await new Promise((resolve, reject) => {
+      const req = http.get(
+        url,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: 'application/json',
+          },
+          timeout: 15000,
+        },
+        (res: import('http').IncomingMessage) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (c: Buffer) => chunks.push(c));
+          res.on('end', () => {
+            const text = Buffer.concat(chunks).toString('utf-8');
+            if ((res.statusCode ?? 0) >= 400) {
+              reject(new Error(`HTTP ${res.statusCode}: ${text.slice(0, 200)}`));
+            } else {
+              resolve(text);
+            }
+          });
+        },
+      );
+      req.on('error', reject);
+      req.on('timeout', () => { req.destroy(); reject(new Error('Timeout conectando a la intranet')); });
+    });
+
+    const json = JSON.parse(body);
+    return { success: true, data: json };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { success: false, error: msg, data: { nodes: [], edges: [], meta: {} } };
+  }
+});
+
+ipcMain.handle('index:scan', async (_, rootPath: string, maxDepth: number = 5) => {
+  if (indexing) return { success: false, count: indexEntries.length, entries: [] };
+  indexing = true;
+  const start = Date.now();
+  try {
+    const results: IndexEntry[] = [];
+    await scanDir(rootPath, maxDepth, results);
+    indexEntries = results;
+    const elapsed = Date.now() - start;
+
+    const cachePath = path.join(app.getPath('userData'), INDEX_CACHE_FILE);
+    await fs.promises.writeFile(cachePath, JSON.stringify({ rootPath, ts: Date.now(), entries: results }), 'utf-8');
+
+    return { success: true, count: results.length, elapsed, entries: results };
+  } catch (error: any) {
+    return { success: false, count: 0, error: error.message, entries: [] };
+  } finally {
+    indexing = false;
+  }
+});
+
+ipcMain.handle('index:stats', () => ({
+  totalFiles: indexEntries.filter(e => !e.isDirectory).length,
+  totalDirs: indexEntries.filter(e => e.isDirectory).length,
+  isIndexing: indexing,
+}));
+
+ipcMain.handle('index:loadCache', async () => {
+  try {
+    const cachePath = path.join(app.getPath('userData'), INDEX_CACHE_FILE);
+    const raw = await fs.promises.readFile(cachePath, 'utf-8');
+    const { entries } = JSON.parse(raw) as { rootPath: string; entries: IndexEntry[] };
+    indexEntries = entries;
+    return { success: true, count: entries.length, entries };
+  } catch {
+    return { success: false, count: 0, entries: [] };
+  }
+});
+
+// ─── NetVault Server API client ───────────────────────────────────────────────
+// El token JWT y la URL del servidor se guardan SOLO en el proceso principal.
+// El renderer nunca toca la key de Claude ni maneja el token directamente.
+
+interface ServerSession {
+  token: string;
+  username: string;
+  role: string;
+}
+
+let serverSession: ServerSession | null = null;
+let serverUrl = 'http://localhost:3847';
+
+ipcMain.handle('server:getUrl', () => serverUrl);
+ipcMain.handle('server:setUrl', (_event, url: string) => { serverUrl = url; });
+
+ipcMain.handle('server:login', async (_event, username: string, password: string) => {
+  try {
+    const https = require('https');
+    const http = require('http');
+    const url = new URL('/auth/login', serverUrl);
+    const body = JSON.stringify({ username, password });
+    const transport = url.protocol === 'https:' ? https : http;
+
+    const data = await new Promise<string>((resolve, reject) => {
+      const req = transport.request(
+        { hostname: url.hostname, port: url.port, path: url.pathname, method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } },
+        (res: any) => {
+          let raw = '';
+          res.on('data', (c: Buffer) => { raw += c.toString(); });
+          res.on('end', () => resolve(raw));
+        },
+      );
+      req.on('error', reject);
+      req.write(body);
+      req.end();
+    });
+
+    const json = JSON.parse(data);
+    if (json.ok) {
+      serverSession = { token: json.data.token, username: json.data.user.username, role: json.data.user.role };
+      return { ok: true, data: { username: json.data.user.username, role: json.data.user.role, expiresIn: json.data.expiresIn } };
+    }
+    return { ok: false, error: json.error ?? 'Login fallido' };
+  } catch (err: any) {
+    return { ok: false, error: `No se pudo conectar al servidor: ${err.message}` };
+  }
+});
+
+ipcMain.handle('server:logout', () => { serverSession = null; return { ok: true }; });
+
+ipcMain.handle('server:session', () => {
+  if (!serverSession) return { ok: false, error: 'Sin sesión activa' };
+  return { ok: true, data: { username: serverSession.username, role: serverSession.role } };
+});
+
+ipcMain.handle('server:health', async () => {
+  try {
+    const https = require('https');
+    const http = require('http');
+    const url = new URL('/health', serverUrl);
+    const transport = url.protocol === 'https:' ? https : http;
+
+    const data = await new Promise<string>((resolve, reject) => {
+      const req = transport.request(
+        { hostname: url.hostname, port: url.port, path: url.pathname, method: 'GET', timeout: 3000 },
+        (res: any) => {
+          let raw = '';
+          res.on('data', (c: Buffer) => { raw += c.toString(); });
+          res.on('end', () => resolve(raw));
+        },
+      );
+      req.on('error', reject);
+      req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
+      req.end();
+    });
+
+    const json = JSON.parse(data);
+    return { ok: true, reachable: true, ...json.data };
+  } catch {
+    return { ok: false, reachable: false, error: 'Servidor no disponible' };
+  }
+});
+
+ipcMain.handle('server:runAnalysis', async (_event, payload: {
+  procedureCode: string;
+  area: string;
+  textContent: string;
+  existingFlowchartMmd?: string;
+}) => {
+  if (!serverSession) return { ok: false, error: 'No autenticado. Inicia sesión primero.' };
+
+  try {
+    const https = require('https');
+    const http = require('http');
+    const url = new URL('/analysis/run', serverUrl);
+    const body = JSON.stringify(payload);
+    const transport = url.protocol === 'https:' ? https : http;
+
+    const data = await new Promise<string>((resolve, reject) => {
+      const req = transport.request(
+        {
+          hostname: url.hostname, port: url.port, path: url.pathname, method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(body),
+            'Authorization': `Bearer ${serverSession!.token}`,
+          },
+          timeout: 120000,
+        },
+        (res: any) => {
+          let raw = '';
+          res.on('data', (c: Buffer) => { raw += c.toString(); });
+          res.on('end', () => resolve(raw));
+        },
+      );
+      req.on('error', reject);
+      req.on('timeout', () => { req.destroy(); reject(new Error('Timeout del análisis')); });
+      req.write(body);
+      req.end();
+    });
+
+    return JSON.parse(data);
+  } catch (err: any) {
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle('server:getRubric', async () => {
+  try {
+    const https = require('https');
+    const http = require('http');
+    const url = new URL('/analysis/rubric', serverUrl);
+    const transport = url.protocol === 'https:' ? https : http;
+    const data = await new Promise<string>((resolve, reject) => {
+      const req = transport.request(
+        { hostname: url.hostname, port: url.port, path: url.pathname, method: 'GET', timeout: 5000 },
+        (res: any) => {
+          let raw = '';
+          res.on('data', (c: Buffer) => { raw += c.toString(); });
+          res.on('end', () => resolve(raw));
+        },
+      );
+      req.on('error', reject);
+      req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
+      req.end();
+    });
+    return JSON.parse(data);
+  } catch (err: any) {
+    return { ok: false, error: err.message };
+  }
+});
+
+function findRubricDir(): string {
+  const candidates = [
+    path.join(process.cwd(), 'resources', 'rubrica'),
+    path.join(__dirname, '..', 'resources', 'rubrica'),
+    path.join(__dirname, '..', '..', 'resources', 'rubrica'),
+  ];
+  for (const dir of candidates) {
+    if (fs.existsSync(path.join(dir, 'rubrica-agent.json'))) return dir;
+  }
+  return candidates[0];
+}
+
+ipcMain.handle('analysis:getLocalRubric', async () => {
+  try {
+    const dir = findRubricDir();
+    const json = JSON.parse(await fs.promises.readFile(path.join(dir, 'rubrica-agent.json'), 'utf-8'));
+    const md = await fs.promises.readFile(path.join(dir, 'RUBRICA_PROCEDIMIENTOS.md'), 'utf-8');
+    return { ok: true, data: { json, markdown: md } };
+  } catch (err: any) {
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle('analysis:savePackage', async (
+  _event,
+  payload: {
+    outputRoot: string;
+    area: string;
+    procedureCode: string;
+    files: Record<string, string>;
+    originalPath?: string;
+  },
+) => {
+  const { outputRoot, area, procedureCode, files, originalPath } = payload;
+  const folder = path.join(outputRoot, area, procedureCode);
+  await fs.promises.mkdir(folder, { recursive: true });
+
+  for (const [name, content] of Object.entries(files)) {
+    await fs.promises.writeFile(path.join(folder, name), content, 'utf-8');
+  }
+
+  if (originalPath && fs.existsSync(originalPath)) {
+    const ext = path.extname(originalPath) || '.bin';
+    await fs.promises.copyFile(originalPath, path.join(folder, `original${ext}`));
+  }
+
+  return { ok: true, folder };
+});
+
+ipcMain.handle('dialog:openFolderForSave', async () => {
+  const result = await dialog.showOpenDialog({
+    properties: ['openDirectory', 'createDirectory'],
+    title: 'Carpeta raíz netvault (contiene T&C, P&C, Transportes)',
+  });
+  if (result.canceled || !result.filePaths[0]) return null;
+  return result.filePaths[0];
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 // App lifecycle
 app.whenReady().then(() => {

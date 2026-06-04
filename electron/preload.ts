@@ -36,6 +36,11 @@ const electronAPI = {
 
   // Terminal
   executeCommand: (cmd: string, cwd: string) => ipcRenderer.invoke('terminal:execute', cmd, cwd),
+  onTerminalStream: (cb: (data: { type: string; text?: string; code?: number }) => void) => {
+    const handler = (_: unknown, data: { type: string; text?: string; code?: number }) => cb(data);
+    ipcRenderer.on('terminal:stream', handler);
+    return () => ipcRenderer.removeListener('terminal:stream', handler);
+  },
 
   // AI - Ollama chat (bypasses CORS via main process)
   chatWithOllama: (model: string, messages: any[]) => ipcRenderer.invoke('ollama:chat', model, messages),
@@ -43,6 +48,52 @@ const electronAPI = {
   // Code editors detection
   detectEditors: () => ipcRenderer.invoke('editors:detect'),
   openWithEditor: (editorPath: string, filePath: string) => ipcRenderer.invoke('editors:openWith', editorPath, filePath),
+
+  // System paths
+  getSystemPaths: () => ipcRenderer.invoke('system:getPaths'),
+  getAppRoot: () => ipcRenderer.invoke('system:getAppRoot'),
+
+  // Main-process indexer (faster: single IPC instead of N readDir calls)
+  scanIndex: (rootPath: string, maxDepth?: number) => ipcRenderer.invoke('index:scan', rootPath, maxDepth ?? 5),
+  getIndexStats: () => ipcRenderer.invoke('index:stats'),
+  loadIndexCache: () => ipcRenderer.invoke('index:loadCache'),
+
+  // Grafo vault — listado .md en un solo IPC
+  scanVaultMarkdown: (rootPath: string) => ipcRenderer.invoke('graph:scanMarkdown', rootPath),
+
+  // Grafo LightRAG — proxy HTTP para evitar CORS
+  loadLightRagGraph: (
+    intranetUrl: string,
+    token: string,
+    opts?: { maxNodes?: number; maxEdges?: number; q?: string },
+  ) => ipcRenderer.invoke('graph:lightrag', intranetUrl, token, opts ?? {}),
+
+  // ─── NetVault Server API ─────────────────────────────────────────────────
+  // El JWT nunca toca el renderer; toda autenticación pasa por el main process.
+  serverGetUrl: () => ipcRenderer.invoke('server:getUrl'),
+  serverSetUrl: (url: string) => ipcRenderer.invoke('server:setUrl', url),
+  serverHealth: () => ipcRenderer.invoke('server:health'),
+  serverLogin: (username: string, password: string) => ipcRenderer.invoke('server:login', username, password),
+  serverLogout: () => ipcRenderer.invoke('server:logout'),
+  serverSession: () => ipcRenderer.invoke('server:session'),
+  serverRunAnalysis: (payload: {
+    procedureCode: string;
+    area: string;
+    textContent: string;
+    existingFlowchartMmd?: string;
+  }) => ipcRenderer.invoke('server:runAnalysis', payload),
+  serverGetRubric: () => ipcRenderer.invoke('server:getRubric'),
+
+  // Análisis — formato único en disco
+  analysisGetLocalRubric: () => ipcRenderer.invoke('analysis:getLocalRubric'),
+  analysisSavePackage: (payload: {
+    outputRoot: string;
+    area: string;
+    procedureCode: string;
+    files: Record<string, string>;
+    originalPath?: string;
+  }) => ipcRenderer.invoke('analysis:savePackage', payload),
+  openFolderForSave: () => ipcRenderer.invoke('dialog:openFolderForSave'),
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);

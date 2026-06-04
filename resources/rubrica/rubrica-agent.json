@@ -1,0 +1,165 @@
+{
+  "version": "1.0.0",
+  "name": "Rúbrica NetVault — Análisis de procedimientos e instructivos",
+  "locale": "es-CO",
+  "documentTypes": ["procedimiento", "instructivo", "politica"],
+  "areas": ["T&C", "P&C", "Transportes"],
+  "categories": [
+    {
+      "id": "claridad",
+      "name": "Claridad",
+      "weight": 1.2,
+      "description": "El texto es comprensible, sin ambigüedades ni jerga innecesaria.",
+      "checks": [
+        "Cada paso tiene un verbo de acción explícito",
+        "No hay términos sin definir en el primer uso",
+        "Las condiciones (si/entonces) están explícitas",
+        "Un lector nuevo puede ejecutar el proceso sin preguntar"
+      ],
+      "severityHints": {
+        "critica": "Imposible ejecutar el paso por ambigüedad grave",
+        "alta": "Múltiples interpretaciones posibles en pasos clave",
+        "media": "Redacción confusa pero recuperable con contexto",
+        "baja": "Mejora de redacción sin impacto operativo"
+      }
+    },
+    {
+      "id": "completitud",
+      "name": "Completitud",
+      "weight": 1.2,
+      "description": "Cubre inicio, desarrollo, cierre, excepciones y entregables.",
+      "checks": [
+        "Existe disparador claro de inicio",
+        "Todos los pasos intermedios están documentados",
+        "Hay cierre formal con entregables",
+        "Se documentan excepciones y qué hacer ante ellas",
+        "Referencias a formularios/sistemas están nombrados"
+      ],
+      "severityHints": {
+        "critica": "Falta un tramo crítico del proceso (sin alternativa)",
+        "alta": "Falta manejo de excepción frecuente",
+        "media": "Detalle menor omitido",
+        "baja": "Anexo o referencia opcional ausente"
+      }
+    },
+    {
+      "id": "responsabilidades",
+      "name": "Responsabilidades",
+      "weight": 1.0,
+      "description": "Define quién hace qué, con roles y escalamiento.",
+      "checks": [
+        "Cada actividad tiene responsable (rol o cargo)",
+        "Existe escalamiento ante bloqueos",
+        "Aprobaciones tienen autoridad nombrada",
+        "No hay pasos huérfanos sin dueño"
+      ],
+      "severityHints": {
+        "critica": "Paso crítico sin responsable",
+        "alta": "Aprobación sin autoridad definida",
+        "media": "Rol genérico sin especificar área",
+        "baja": "Sugerencia de clarificar alias de rol"
+      }
+    },
+    {
+      "id": "riesgos",
+      "name": "Riesgos",
+      "weight": 1.0,
+      "description": "Identifica riesgos operacionales, legales y de cumplimiento.",
+      "checks": [
+        "Riesgos por paso o por fase están nombrados",
+        "Existen controles o mitigaciones",
+        "Datos sensibles tienen manejo indicado",
+        "Impacto de error está considerado"
+      ],
+      "severityHints": {
+        "critica": "Riesgo alto sin control",
+        "alta": "Control débil o no verificable",
+        "media": "Riesgo menor sin documentar mitigación",
+        "baja": "Oportunidad de documentar control existente"
+      }
+    },
+    {
+      "id": "tiempos",
+      "name": "Tiempos",
+      "weight": 0.8,
+      "description": "Plazos, SLAs y duración por actividad cuando aplique.",
+      "checks": [
+        "Actividades con SLA o plazo tienen valor numérico",
+        "Unidades de tiempo son consistentes",
+        "Tiempos de espera entre áreas están indicados",
+        "Plazos legales o contractuales están citados si aplican"
+      ],
+      "severityHints": {
+        "critica": "SLA contractual ausente donde es obligatorio",
+        "alta": "Plazo vago en paso con impacto cliente",
+        "media": "Tiempo estimable pero no documentado",
+        "baja": "Sugerencia de cuantificar tiempo"
+      }
+    },
+    {
+      "id": "cumplimiento",
+      "name": "Cumplimiento",
+      "weight": 1.0,
+      "description": "Alineación con normativa interna, políticas y trazabilidad.",
+      "checks": [
+        "Referencia a políticas o normas internas cuando aplica",
+        "Registros/evidencias de cumplimiento están definidos",
+        "Versionado y vigencia del documento son coherentes",
+        "Separación de funciones en aprobaciones sensibles"
+      ],
+      "severityHints": {
+        "critica": "Incumplimiento normativo explícito",
+        "alta": "Falta evidencia obligatoria",
+        "media": "Referencia normativa incompleta",
+        "baja": "Mejora de trazabilidad"
+      }
+    },
+    {
+      "id": "mejora_continua",
+      "name": "Mejora continua",
+      "weight": 0.8,
+      "description": "Oportunidades de automatización, eliminación de pasos y mejoras.",
+      "checks": [
+        "Pasos manuales redundantes identificados",
+        "Oportunidades de integración con intranet/sistemas",
+        "Métricas o KPIs del proceso mencionados o sugeridos",
+        "Propuestas son accionables y priorizadas"
+      ],
+      "severityHints": {
+        "critica": "N/A salvo bloqueo por deuda técnica extrema",
+        "alta": "Automatización de alto impacto no considerada",
+        "media": "Mejora operativa clara",
+        "baja": "Optimización menor"
+      }
+    }
+  ],
+  "markdownNormalizedRules": [
+    "Título H1 con código y nombre del procedimiento",
+    "Sección ## Objetivo (1 párrafo)",
+    "Sección ## Alcance (área, roles, exclusiones)",
+    "Sección ## Definiciones (si hay siglas)",
+    "Sección ## Responsables (tabla rol | responsabilidad)",
+    "Sección ## Desarrollo (pasos numerados 1. 2. 3.)",
+    "Sección ## Excepciones",
+    "Sección ## Registros y evidencias",
+    "Sección ## Referencias",
+    "Mantener hechos del original; no inventar pasos no presentes"
+  ],
+  "flowchartRules": [
+    "Usar flowchart LR o TD según complejidad",
+    "Nodos con verbo + objeto (máx. 6 palabras)",
+    "Decisiones con {¿pregunta?}",
+    "Incluir nodo Inicio y Cierre",
+    "Máximo 25 nodos; si hay más, agrupar en subprocesos"
+  ],
+  "corpusRules": [
+    "Extraer 3-15 chunks de 80-400 caracteres",
+    "Cada chunk: entidades (personas, sistemas, departamentos) y relaciones from-to-type",
+    "Alineado a consumo LightRAG / ZYMO",
+    "No incluir datos personales identificables innecesarios (NIT, cédulas)"
+  ],
+  "visibilityRules": {
+    "interna": "Hallazgos operativos, riesgos internos, deuda de proceso",
+    "publica": "Solo mejoras o clarificaciones aptas para publicar en intranet sin datos sensibles"
+  }
+}

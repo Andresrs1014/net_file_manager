@@ -10,9 +10,10 @@ interface SearchResult {
 interface SearchBarProps {
   onResultSelect?: (result: SearchResult) => void;
   placeholder?: string;
+  currentPath?: string;
 }
 
-export function SearchBar({ onResultSelect, placeholder = 'Buscar archivos...' }: SearchBarProps) {
+export function SearchBar({ onResultSelect, placeholder = 'Buscar archivos...', currentPath }: SearchBarProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -89,10 +90,17 @@ export function SearchBar({ onResultSelect, placeholder = 'Buscar archivos...' }
   };
 
   const handleReindex = async () => {
+    if (!currentPath) return;
     setIsSearching(true);
     searchService.clear();
     setResults([]);
-    setIsSearching(false);
+    try {
+      await searchService.indexDirectory(currentPath);
+    } catch {
+      // Ignore errors
+    } finally {
+      setIsSearching(false);
+    }
   };
 
   return (

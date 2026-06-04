@@ -1,388 +1,715 @@
-import { useState, useRef, useEffect } from 'react';
-import { aiService, type Message } from '../../services/indexer/aiService';
-import { useAIConfig, getDefaultOllamaModel } from '../../services/indexer/aiConfig';
+import { useState, useEffect } from 'react';
+import {
+  Server, LogIn, LogOut, RefreshCw, FileText, Play, GitBranch,
+  AlertTriangle, CheckCircle, Clock, Lightbulb,
+  Database, Download, X, ChevronDown, Loader
+} from 'lucide-react';
+import type { AnalysisPackage, ProcedureArea, UserRole, FindingSeverity } from '../../types';
+import { MermaidPreview } from './MermaidPreview';
+import {
+  extractTextFromPath,
+  inferProcedureCode,
+  inferAreaFromPath,
+  buildPackageFiles,
+  isAnalyzableFile,
+} from '../../services/procedureAnalysisService';
 
-interface AnalysisResult {
-  entities: Entity[];
-  procedures: Procedure[];
-  flowchartCode?: string;
-  summary: string;
+// ─── Sub-componentes de resultado ─────────────────────────────────────────────
+
+const SEVERITY_COLORS: Record<FindingSeverity, string> = {
+  critica: 'text-red-400 bg-red-400/10 border-red-400/30',
+  alta: 'text-orange-400 bg-orange-400/10 border-orange-400/30',
+  media: 'text-yellow-400 bg-yellow-400/10 border-yellow-400/30',
+  baja: 'text-blue-400 bg-blue-400/10 border-blue-400/30',
+};
+
+function FindingCard({ f }: { f: AnalysisPackage['findings'][0] }) {
+  return (
+    <div className={`p-3 rounded-lg border ${SEVERITY_COLORS[f.severity]}`}>
+      <div className="flex items-center gap-2 mb-1">
+        <span className="text-xs font-bold uppercase tracking-wide opacity-80">{f.severity}</span>
+        <span className="text-xs opacity-60">·</span>
+        <span className="text-xs opacity-80">{f.category}</span>
+        {f.visibility === 'publica' && (
+          <span className="ml-auto text-xs px-1.5 py-0.5 bg-white/10 rounded">público</span>
+        )}
+      </div>
+      <p className="text-sm text-[#e5e5e5] mb-1">{f.description}</p>
+      <p className="text-xs text-[#a3a3a3]">→ {f.suggestion}</p>
+    </div>
+  );
 }
 
-interface Entity {
-  name: string;
-  type: 'person' | 'department' | 'document' | 'system' | 'process' | 'location';
-  description?: string;
-  mentions: number;
+function ResultTabs({ pkg }: { pkg: AnalysisPackage }) {
+  const [tab, setTab] = useState<'findings' | 'flowchart' | 'markdown' | 'proposals' | 'times' | 'corpus' | 'meta'>('findings');
+  const tabs = [
+    { id: 'findings', label: `Hallazgos (${pkg.findings.length})`, icon: AlertTriangle },
+    { id: 'flowchart', label: 'Flujograma', icon: GitBranch },
+    { id: 'markdown', label: 'Procedimiento', icon: FileText },
+    { id: 'proposals', label: `Propuestas (${pkg.proposals.length})`, icon: Lightbulb },
+    { id: 'times', label: 'Tiempos', icon: Clock },
+    { id: 'corpus', label: 'Corpus ZYMO', icon: Database },
+    { id: 'meta', label: 'Meta', icon: Server },
+  ] as const;
+
+  return (
+    <div className="flex flex-col flex-1 min-h-0">
+      {/* Tab bar */}
+      <div className="flex gap-1 p-1 bg-[#1a1a1a] rounded-lg mb-3 flex-shrink-0 flex-wrap">
+        {tabs.map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            onClick={() => setTab(id as typeof tab)}
+            className={`flex items-center gap-1.5 px-2 py-1.5 rounded text-xs font-medium transition-colors ${
+              tab === id
+                ? 'bg-[#404040] text-[#e5e5e5]'
+                : 'text-[#737373] hover:text-[#a3a3a3]'
+            }`}
+          >
+            <Icon size={12} />
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab content */}
+      <div className="flex-1 overflow-auto">
+        {tab === 'findings' && (
+          <div className="space-y-2">
+            {pkg.findings.length === 0 ? (
+              <div className="text-center py-8 text-[#737373]">Sin hallazgos</div>
+            ) : (
+              pkg.findings.map((f) => <FindingCard key={f.id} f={f} />)
+            )}
+          </div>
+        )}
+
+        {tab === 'flowchart' && (
+          <div className="space-y-3">
+            {pkg.flowchartMmd && <MermaidPreview code={pkg.flowchartMmd} />}
+            <pre className="bg-[#1a1a1a] p-4 rounded-lg text-sm text-[#a3a3a3] overflow-x-auto font-mono leading-6 border border-[#333]">
+              {pkg.flowchartMmd || '(sin flujograma generado)'}
+            </pre>
+            {pkg.flowchartDiff && (
+              <div>
+                <p className="text-xs text-[#737373] mb-1">Diff con flujograma previo:</p>
+                <pre className="bg-[#1a1a1a] p-3 rounded text-xs font-mono text-[#a3a3a3] overflow-x-auto border border-[#333]">
+                  {pkg.flowchartDiff}
+                </pre>
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab === 'markdown' && (
+          <pre className="bg-[#1a1a1a] p-4 rounded-lg text-sm text-[#a3a3a3] overflow-auto font-mono leading-6 border border-[#333] whitespace-pre-wrap">
+            {pkg.markdownNormalized || '(sin markdown generado)'}
+          </pre>
+        )}
+
+        {tab === 'proposals' && (
+          <div className="space-y-2">
+            {pkg.proposals.length === 0 ? (
+              <div className="text-center py-8 text-[#737373]">Sin propuestas</div>
+            ) : (
+              pkg.proposals.map((p, i) => (
+                <div key={i} className="p-3 rounded-lg bg-[#1a1a1a] border border-[#333]">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded ${
+                      p.priority === 'alta' ? 'bg-red-500/20 text-red-400'
+                        : p.priority === 'media' ? 'bg-yellow-500/20 text-yellow-400'
+                        : 'bg-blue-500/20 text-blue-400'
+                    }`}>{p.priority}</span>
+                    <span className="text-xs text-[#737373] px-2 py-0.5 bg-[#262626] rounded">{p.type}</span>
+                  </div>
+                  <p className="text-sm font-medium text-[#e5e5e5] mb-0.5">{p.title}</p>
+                  <p className="text-xs text-[#a3a3a3]">{p.description}</p>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+
+        {tab === 'times' && (
+          <div className="space-y-2">
+            {pkg.times.length === 0 ? (
+              <div className="text-center py-8 text-[#737373]">No se extrajeron tiempos del procedimiento</div>
+            ) : (
+              pkg.times.map((t, i) => (
+                <div key={i} className="p-3 rounded-lg bg-[#1a1a1a] border border-[#333] flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-[#e5e5e5]">{t.activity}</p>
+                    <p className="text-xs text-[#737373] mt-0.5">{t.rawText}</p>
+                  </div>
+                  <div className="text-sm font-mono text-[#3b82f6] text-right">
+                    {t.minMinutes != null ? `${t.minMinutes}` : '?'}
+                    {t.maxMinutes != null ? `–${t.maxMinutes}` : ''}
+                    <span className="text-xs text-[#737373] ml-1">{t.unit}</span>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+
+        {tab === 'corpus' && (
+          <div className="space-y-2">
+            {pkg.zymoCorpus.length === 0 ? (
+              <div className="text-center py-8 text-[#737373]">Sin corpus generado</div>
+            ) : (
+              pkg.zymoCorpus.map((entry, i) => (
+                <div key={i} className="p-3 rounded-lg bg-[#1a1a1a] border border-[#333]">
+                  <p className="text-xs text-[#737373] mb-1">Fuente: {entry.source}</p>
+                  <p className="text-sm text-[#a3a3a3] mb-2">{entry.chunk}</p>
+                  <div className="flex flex-wrap gap-1">
+                    {entry.entities.map((e, j) => (
+                      <span key={j} className="text-xs px-1.5 py-0.5 bg-purple-500/10 text-purple-400 rounded">{e}</span>
+                    ))}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+
+        {tab === 'meta' && (
+          <div className="space-y-2">
+            {Object.entries(pkg.meta).map(([k, v]) => (
+              <div key={k} className="flex items-center justify-between py-2 border-b border-[#2a2a2a]">
+                <span className="text-xs text-[#737373] font-mono">{k}</span>
+                <span className="text-xs text-[#a3a3a3] font-mono max-w-[60%] text-right truncate">{String(v)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
-interface Procedure {
-  name: string;
-  steps: string[];
-  responsible?: string;
-  inputs?: string[];
-  outputs?: string[];
-  relatedEntities: string[];
+// ─── Panel principal ──────────────────────────────────────────────────────────
+
+interface Props {
+  onClose: () => void;
+  filePath?: string;
+  /** Carpeta raíz sugerida para guardar paquete (ej. ruta activa del explorador) */
+  defaultOutputRoot?: string;
+  /** Notifica al app cuando hay un paquete listo (p. ej. para el grafo) */
+  onAnalysisComplete?: (pkg: AnalysisPackage) => void;
+  onOpenGraph?: (pkg: AnalysisPackage) => void;
 }
 
-export function AnalyzerPanel({ onClose }: { onClose: () => void }) {
-  const { config, isLoaded } = useAIConfig();
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
+export function AnalyzerPanel({ onClose, filePath, defaultOutputRoot, onAnalysisComplete, onOpenGraph }: Props) {
+  // Server connection state
+  const [serverUrl, setServerUrl] = useState('http://localhost:3847');
+  const [serverHealth, setServerHealth] = useState<{
+    reachable: boolean; anthropicConfigured?: boolean; model?: string; mode?: string;
+  } | null>(null);
+  const [checkingHealth, setCheckingHealth] = useState(false);
+
+  // Auth state
+  const [session, setSession] = useState<{ username: string; role: UserRole } | null>(null);
+  const [loginUsername, setLoginUsername] = useState('admin');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loggingIn, setLoggingIn] = useState(false);
+  const [loginError, setLoginError] = useState('');
+
+  // Analysis config
+  const [procedureCode, setProcedureCode] = useState('');
+  const [area, setArea] = useState<ProcedureArea>('T&C');
+  const [textContent, setTextContent] = useState('');
+  const [textSource, setTextSource] = useState<'file' | 'paste'>('file');
+
+  // Analysis state
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analysisError, setAnalysisError] = useState('');
+  const [result, setResult] = useState<AnalysisPackage | null>(null);
   const [progress, setProgress] = useState('');
-  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [documentContent, setDocumentContent] = useState<string>('');
-  const [isAIReady, setIsAIReady] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [outputRoot, setOutputRoot] = useState(defaultOutputRoot ?? '');
+  const [sourceFilePath, setSourceFilePath] = useState(filePath ?? '');
+  const [savedFolder, setSavedFolder] = useState<string | null>(null);
+  const [showRubric, setShowRubric] = useState(false);
+  const [rubricMarkdown, setRubricMarkdown] = useState('');
+  const [loadingDoc, setLoadingDoc] = useState(false);
+  const [existingFlowchart, setExistingFlowchart] = useState('');
 
-  // Initialize AI on mount
-  useEffect(() => {
-    if (isLoaded && config) {
-      aiService.initialize({
-        provider: config.provider,
-        model: config.model || getDefaultOllamaModel(),
-        apiKey: config.apiKey,
-      }).then(() => setIsAIReady(true)).catch(() => setIsAIReady(false));
+  const api = window.electronAPI;
+
+  const loadRubric = async () => {
+    const remote = await api.serverGetRubric?.();
+    if (remote?.ok && remote.data?.markdown) {
+      setRubricMarkdown(remote.data.markdown);
+      return;
     }
-  }, [isLoaded, config]);
-
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setProgress('Convirtiendo documento...');
-    setError(null);
-    setAnalysisResult(null);
-
-    try {
-      // Read file content (for supported types)
-      const reader = new FileReader();
-      reader.onload = async (event) => {
-        const content = event.target?.result as string;
-        setDocumentContent(content);
-        setProgress('Documento cargado. Listo para analizar.');
-      };
-      reader.readAsText(file);
-    } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      setError(errorMessage);
-    }
+    const local = await api.analysisGetLocalRubric?.();
+    if (local?.ok && local.data?.markdown) setRubricMarkdown(local.data.markdown);
   };
 
-  const handleAnalyze = async () => {
-    if (!documentContent.trim()) {
-      setError('Primero carga un documento');
-      return;
-    }
-
-    if (!isAIReady) {
-      setError('AI no está configurado. Configura Ollama o Claude en AI Settings.');
-      return;
-    }
-
-    setIsAnalyzing(true);
-    setError(null);
-    setProgress('Analizando documento...');
-
+  const loadDocumentFromPath = async (path: string) => {
+    setLoadingDoc(true);
+    setAnalysisError('');
     try {
-      // Prepare the analysis prompt
-      const systemPrompt = `Eres un asistente especializado en análisis de procedimientos empresariales. Analiza el documento proporcionado y extrae:
-
-1. ENTIDADES: Personas, departamentos, documentos, sistemas, procesos y ubicaciones mencionadas. Para cada entidad incluye:
-   - Nombre
-   - Tipo (person/department/document/system/process/location)
-   - Descripción breve
-   - Número de menciones
-
-2. PROCEDIMIENTOS: Flujos de trabajo y procesos descritos. Para cada procedimiento incluye:
-   - Nombre
-   - Pasos (secuencia de acciones)
-   - Responsable
-   - Entradas y salidas
-   - Entidades relacionadas
-
-3. FLUJOGRAMA: Código Mermaid para visualizar el procedimiento principal.
-
-4. RESUMEN: Resumen ejecutivo del documento.
-
-Responde en JSON con esta estructura exacta:
-{
-  "entities": [{"name": "", "type": "", "description": "", "mentions": 0}],
-  "procedures": [{"name": "", "steps": [], "responsible": "", "inputs": [], "outputs": [], "relatedEntities": []}],
-  "flowchartCode": "graph TD ...",
-  "summary": ""
-}`;
-
-      const userMessage = `Analiza este documento:\n\n${documentContent.substring(0, 15000)}`;
-
-      setProgress('Enviando a IA...');
-
-      const messages: Message[] = [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userMessage },
-      ];
-
-      const response = await aiService.chat(messages);
-      
-      setProgress('Procesando respuesta...');
-
-      // Parse the JSON response
-      const jsonMatch = response.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const result = JSON.parse(jsonMatch[0]) as AnalysisResult;
-        setAnalysisResult(result);
-        setProgress('Análisis completado');
-      } else {
-        // Try to extract markdown content
-        setAnalysisResult({
-          entities: [],
-          procedures: [],
-          summary: response,
-          flowchartCode: '',
-        });
-        setProgress('Análisis completado');
+      const text = await extractTextFromPath(path);
+      setTextContent(text);
+      setSourceFilePath(path);
+      setProcedureCode(inferProcedureCode(path));
+      setArea(inferAreaFromPath(path));
+      const mmdPath = path.replace(/\.[^.]+$/i, '') + '.mmd';
+      if (await api.fileExists(mmdPath)) {
+        const mmd = await api.readFile(mmdPath);
+        if (typeof mmd === 'string') setExistingFlowchart(mmd);
       }
     } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      setError(`Error en análisis: ${errorMessage}`);
+      setAnalysisError(err instanceof Error ? err.message : 'Error al cargar documento');
     } finally {
-      setIsAnalyzing(false);
+      setLoadingDoc(false);
     }
   };
 
-  const handleExportResults = () => {
-    if (!analysisResult) return;
+  // ─── Init ───────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    api.serverGetUrl?.().then((url) => { if (url) setServerUrl(url); });
+    api.serverSession?.().then((r) => { if (r.ok && r.data) setSession(r.data); });
+    checkHealth();
+    loadRubric();
+    if (defaultOutputRoot) setOutputRoot(defaultOutputRoot);
+  }, []);
 
-    const exportData = {
-      fechaAnalisis: new Date().toISOString(),
-      documentoOriginal: documentContent.substring(0, 1000) + '...',
-      ...analysisResult,
-    };
+  useEffect(() => {
+    if (filePath) loadDocumentFromPath(filePath);
+  }, [filePath]);
 
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+  const checkHealth = async () => {
+    setCheckingHealth(true);
+    try {
+      const h = await api.serverHealth?.();
+      setServerHealth(h ?? { reachable: false });
+    } catch {
+      setServerHealth({ reachable: false });
+    } finally {
+      setCheckingHealth(false);
+    }
+  };
+
+  const handleSetUrl = async () => {
+    await api.serverSetUrl?.(serverUrl);
+    checkHealth();
+  };
+
+  // ─── Auth ────────────────────────────────────────────────────────────────────
+  const handleLogin = async () => {
+    setLoggingIn(true);
+    setLoginError('');
+    try {
+      const r = await api.serverLogin?.(loginUsername, loginPassword);
+      if (r?.ok && r.data) {
+        setSession(r.data);
+        setLoginPassword('');
+      } else {
+        setLoginError(r?.error ?? 'Error de login');
+      }
+    } finally {
+      setLoggingIn(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    await api.serverLogout?.();
+    setSession(null);
+    setResult(null);
+  };
+
+  const handleOpenFile = async () => {
+    const path = await api.openFileDialog?.([
+      { name: 'Documentos', extensions: ['md', 'txt', 'docx', 'pdf'] },
+    ]);
+    if (path && isAnalyzableFile(path)) await loadDocumentFromPath(path);
+  };
+
+  const handleLoadSample = async () => {
+    const root = await api.getAppRoot?.();
+    if (!root) return;
+    const sep = root.includes('/') ? '/' : '\\';
+    const samplePath = `${root}${sep}samples${sep}netvault${sep}T&C${sep}TC-EJEMPLO-001${sep}procedimiento-ejemplo.md`;
+    await loadDocumentFromPath(samplePath);
+  };
+
+  // ─── Analysis ────────────────────────────────────────────────────────────────
+  const handleAnalyze = async () => {
+    if (!textContent.trim()) { setAnalysisError('Carga o pega el contenido del procedimiento.'); return; }
+    if (!procedureCode.trim()) { setAnalysisError('Ingresa el código del procedimiento.'); return; }
+    if (!session) { setAnalysisError('Inicia sesión primero.'); return; }
+
+    setAnalyzing(true);
+    setAnalysisError('');
+    setResult(null);
+    setProgress('Enviando al servidor...');
+
+    try {
+      const r = await api.serverRunAnalysis?.({
+        procedureCode,
+        area,
+        textContent,
+        existingFlowchartMmd: existingFlowchart || undefined,
+      });
+      if (r?.ok && r.data) {
+        setResult(r.data);
+        onAnalysisComplete?.(r.data);
+        setProgress('');
+      } else {
+        setAnalysisError(r?.error ?? 'Error del servidor');
+      }
+    } catch (err: unknown) {
+      setAnalysisError(err instanceof Error ? err.message : 'Error desconocido');
+    } finally {
+      setAnalyzing(false);
+      setProgress('');
+    }
+  };
+
+  const handleSavePackage = async () => {
+    if (!result) return;
+    let root = outputRoot.trim();
+    if (!root) {
+      root = (await api.openFolderForSave?.()) ?? '';
+      if (!root) return;
+      setOutputRoot(root);
+    }
+    setProgress('Guardando formato único…');
+    const files = buildPackageFiles(result, sourceFilePath);
+    const r = await api.analysisSavePackage?.({
+      outputRoot: root,
+      area,
+      procedureCode,
+      files,
+      originalPath: sourceFilePath || undefined,
+    });
+    setProgress('');
+    if (r?.ok && r.folder) {
+      setSavedFolder(r.folder);
+      setAnalysisError('');
+    } else {
+      setAnalysisError(r?.error ?? 'No se pudo guardar el paquete');
+    }
+  };
+
+  // ─── Export ──────────────────────────────────────────────────────────────────
+  const handleExport = () => {
+    if (!result) return;
+    const json = JSON.stringify(result, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `analisis-${Date.now()}.json`;
-    link.click();
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${result.procedureCode}-analisis-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
     URL.revokeObjectURL(url);
   };
 
-  const handleCopySummary = () => {
-    if (analysisResult?.summary) {
-      navigator.clipboard.writeText(analysisResult.summary);
-    }
-  };
-
+  // ─── Render ──────────────────────────────────────────────────────────────────
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-      <div className="bg-[#1a1a1a] rounded-xl w-[95vw] h-[95vh] flex flex-col border border-[#404040] shadow-2xl">
+    <div className="fixed inset-0 bg-black/70 flex items-start justify-center z-50 pt-6">
+      <div className="bg-[#1a1a1a] rounded-xl w-[97vw] h-[94vh] flex flex-col border border-[#404040] shadow-2xl">
+
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#404040]">
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">🔬</span>
-            <div>
-              <h2 className="text-lg font-semibold text-[#e5e5e5]">Analizador de Procedimientos</h2>
-              <p className="text-xs text-[#737373]">
-                Analiza documentos y extrae entidades, procedimientos y flujogramas
-              </p>
-            </div>
+        <div className="flex items-center justify-between px-5 py-3 border-b border-[#404040] flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <Server size={18} className="text-purple-400" />
+            <span className="font-semibold text-[#e5e5e5]">Analizador de Procedimientos</span>
+            <span className="text-xs text-[#737373]">· via NetVault Server</span>
           </div>
           <div className="flex items-center gap-2">
+            {result && onOpenGraph && (
+              <button
+                type="button"
+                onClick={() => onOpenGraph(result)}
+                className="flex items-center gap-1 px-3 py-1.5 text-xs bg-[#3b82f6]/20 hover:bg-[#3b82f6]/40 text-[#93c5fd] rounded-lg"
+              >
+                <GitBranch size={12} /> Ver grafo
+              </button>
+            )}
+            {result && (
+              <>
+                <button
+                  onClick={handleSavePackage}
+                  className="flex items-center gap-1 px-3 py-1.5 text-xs bg-purple-600/80 hover:bg-purple-500 text-white rounded-lg transition-colors"
+                >
+                  <Download size={12} /> Guardar formato único
+                </button>
+                <button
+                  onClick={handleExport}
+                  className="flex items-center gap-1 px-3 py-1.5 text-xs bg-[#262626] hover:bg-[#333] text-[#a3a3a3] hover:text-[#e5e5e5] rounded-lg transition-colors"
+                >
+                  <Download size={12} /> JSON
+                </button>
+              </>
+            )}
             <button
-              onClick={handleExportResults}
-              disabled={!analysisResult}
-              className="px-4 py-2 text-sm bg-[#262626] hover:bg-[#333] text-[#a3a3a3] hover:text-[#e5e5e5] rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={() => setShowRubric((v) => !v)}
+              className="flex items-center gap-1 px-3 py-1.5 text-xs bg-[#262626] hover:bg-[#333] text-[#a3a3a3] rounded-lg"
             >
-              📥 Exportar JSON
+              <FileText size={12} /> Rúbrica
             </button>
             <button
               onClick={onClose}
-              className="px-4 py-2 text-sm bg-[#262626] hover:bg-[#ef4444] text-[#a3a3a3] hover:text-white rounded-lg transition-colors"
+              className="flex items-center gap-1 px-3 py-1.5 text-xs bg-[#262626] hover:bg-red-500/20 text-[#a3a3a3] hover:text-red-400 rounded-lg transition-colors"
             >
-              ✕ Cerrar
+              <X size={12} /> Cerrar
             </button>
           </div>
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-auto p-6">
-          {/* File upload */}
-          <div className="mb-6">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".md,.txt,.docx,.pdf"
-              onChange={handleFileSelect}
-              className="hidden"
-            />
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="px-6 py-3 bg-[#262626] hover:bg-[#333] text-[#e5e5e5] rounded-lg border border-[#404040] transition-colors"
-            >
-              📁 Cargar documento (MD, TXT, DOCX, PDF)
-            </button>
-            {documentContent && (
-              <span className="ml-4 text-[#737373]">
-                {documentContent.length} caracteres cargados
-              </span>
-            )}
-          </div>
+        <div className="flex-1 flex min-h-0">
 
-          {/* Progress / Status */}
-          {(progress || error) && (
-            <div className={`mb-6 p-4 rounded-lg ${
-              error ? 'bg-[#ef4444]/10 border border-[#ef4444]' : 'bg-[#3b82f6]/10 border border-[#3b82f6]'
-            }`}>
-              {error ? (
-                <p className="text-[#ef4444]">{error}</p>
-              ) : (
-                <div className="flex items-center gap-3">
-                  <div className="animate-spin text-lg">⏳</div>
-                  <p className="text-[#3b82f6]">{progress}</p>
+          {/* Left panel: config */}
+          <div className="w-72 flex-shrink-0 border-r border-[#2a2a2a] flex flex-col overflow-y-auto">
+
+            {/* Server config */}
+            <div className="p-3 border-b border-[#2a2a2a]">
+              <p className="text-xs font-semibold text-[#737373] uppercase tracking-wide mb-2">Servidor</p>
+              <div className="flex gap-1">
+                <input
+                  value={serverUrl}
+                  onChange={(e) => setServerUrl(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSetUrl()}
+                  className="flex-1 bg-[#262626] border border-[#404040] rounded px-2 py-1 text-xs text-[#e5e5e5] placeholder-[#4a4a4a] focus:outline-none focus:border-purple-500"
+                  placeholder="http://localhost:3847"
+                />
+                <button
+                  onClick={handleSetUrl}
+                  disabled={checkingHealth}
+                  className="px-2 py-1 bg-[#262626] hover:bg-[#333] text-[#737373] hover:text-[#e5e5e5] rounded border border-[#404040] transition-colors"
+                >
+                  {checkingHealth ? <Loader size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                </button>
+              </div>
+
+              {serverHealth && (
+                <div className={`mt-2 flex items-center gap-1.5 text-xs ${serverHealth.reachable ? 'text-green-400' : 'text-red-400'}`}>
+                  {serverHealth.reachable ? <CheckCircle size={12} /> : <AlertTriangle size={12} />}
+                  {serverHealth.reachable
+                    ? `Conectado · ${serverHealth.anthropicConfigured ? 'Claude ✓' : 'mock'} · ${serverHealth.model ?? ''}`
+                    : 'Sin conexión — ¿está corriendo el servidor?'}
                 </div>
               )}
             </div>
-          )}
 
-          {/* Analyze button */}
-          <div className="mb-6">
-            <button
-              onClick={handleAnalyze}
-              disabled={isAnalyzing || !documentContent}
-              className="px-6 py-3 bg-[#8b5cf6] hover:bg-[#7c3aed] text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isAnalyzing ? '⏳ Analizando...' : '🔬 Analizar documento'}
-            </button>
-          </div>
-
-          {/* Results */}
-          {analysisResult && (
-            <div className="space-y-6">
-              {/* Summary */}
-              <div className="bg-[#262626] rounded-lg p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-lg font-semibold text-[#e5e5e5]">📋 Resumen</h3>
+            {/* Auth */}
+            <div className="p-3 border-b border-[#2a2a2a]">
+              <p className="text-xs font-semibold text-[#737373] uppercase tracking-wide mb-2">Sesión</p>
+              {session ? (
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-[#e5e5e5]">{session.username}</p>
+                    <p className="text-xs text-[#737373]">{session.role}</p>
+                  </div>
                   <button
-                    onClick={handleCopySummary}
-                    className="text-xs text-[#737373] hover:text-[#e5e5e5] transition-colors"
+                    onClick={handleLogout}
+                    className="flex items-center gap-1 text-xs text-[#737373] hover:text-red-400 transition-colors"
                   >
-                    📋 Copiar
+                    <LogOut size={12} /> Salir
                   </button>
                 </div>
-                <p className="text-[#a3a3a3] leading-relaxed whitespace-pre-wrap">
-                  {analysisResult.summary}
-                </p>
-              </div>
+              ) : (
+                <div className="space-y-2">
+                  <input
+                    value={loginUsername}
+                    onChange={(e) => setLoginUsername(e.target.value)}
+                    placeholder="Usuario"
+                    className="w-full bg-[#262626] border border-[#404040] rounded px-2 py-1 text-xs text-[#e5e5e5] placeholder-[#4a4a4a] focus:outline-none focus:border-purple-500"
+                  />
+                  <input
+                    type="password"
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+                    placeholder="Contraseña"
+                    className="w-full bg-[#262626] border border-[#404040] rounded px-2 py-1 text-xs text-[#e5e5e5] placeholder-[#4a4a4a] focus:outline-none focus:border-purple-500"
+                  />
+                  {loginError && <p className="text-xs text-red-400">{loginError}</p>}
+                  <button
+                    onClick={handleLogin}
+                    disabled={loggingIn || !serverHealth?.reachable}
+                    className="w-full flex items-center justify-center gap-1 px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white text-xs rounded transition-colors disabled:opacity-50"
+                  >
+                    {loggingIn ? <Loader size={12} className="animate-spin" /> : <LogIn size={12} />}
+                    {loggingIn ? 'Conectando...' : 'Iniciar sesión'}
+                  </button>
+                </div>
+              )}
+            </div>
 
-              {/* Entities */}
-              <div className="bg-[#262626] rounded-lg p-4">
-                <h3 className="text-lg font-semibold text-[#e5e5e5] mb-3">
-                  🧩 Entidades detectadas ({analysisResult.entities.length})
-                </h3>
-                <div className="grid grid-cols-2 gap-3">
-                  {analysisResult.entities.map((entity, index) => (
-                    <div
-                      key={index}
-                      className="bg-[#1a1a1a] p-3 rounded border border-[#333]"
+            {/* Procedure config */}
+            <div className="p-3 border-b border-[#2a2a2a]">
+              <p className="text-xs font-semibold text-[#737373] uppercase tracking-wide mb-2">Procedimiento</p>
+              <div className="space-y-2">
+                <div>
+                  <label className="text-xs text-[#737373]">Código</label>
+                  <input
+                    value={procedureCode}
+                    onChange={(e) => setProcedureCode(e.target.value)}
+                    placeholder="ej. TC-001, PC-COMPRAS-003"
+                    className="w-full mt-0.5 bg-[#262626] border border-[#404040] rounded px-2 py-1 text-xs text-[#e5e5e5] placeholder-[#4a4a4a] focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-[#737373]">Área</label>
+                  <div className="relative mt-0.5">
+                    <select
+                      value={area}
+                      onChange={(e) => setArea(e.target.value as ProcedureArea)}
+                      className="w-full appearance-none bg-[#262626] border border-[#404040] rounded px-2 py-1 text-xs text-[#e5e5e5] focus:outline-none focus:border-purple-500"
                     >
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-lg">
-                          {entity.type === 'person' ? '👤' :
-                           entity.type === 'department' ? '🏢' :
-                           entity.type === 'document' ? '📄' :
-                           entity.type === 'system' ? '💻' :
-                           entity.type === 'process' ? '⚙️' : '📍'}
-                        </span>
-                        <span className="font-medium text-[#e5e5e5]">{entity.name}</span>
-                      </div>
-                      <div className="text-xs text-[#737373]">
-                        <span className="px-2 py-0.5 bg-[#333] rounded">{entity.type}</span>
-                        <span className="ml-2">📍 {entity.mentions} menciones</span>
-                      </div>
-                      {entity.description && (
-                        <p className="mt-2 text-sm text-[#a3a3a3]">{entity.description}</p>
-                      )}
-                    </div>
-                  ))}
+                      <option value="T&C">T&amp;C</option>
+                      <option value="P&C">P&amp;C</option>
+                      <option value="Transportes">Transportes</option>
+                    </select>
+                    <ChevronDown size={10} className="absolute right-2 top-1/2 -translate-y-1/2 text-[#737373] pointer-events-none" />
+                  </div>
                 </div>
               </div>
+            </div>
 
-              {/* Procedures */}
-              <div className="bg-[#262626] rounded-lg p-4">
-                <h3 className="text-lg font-semibold text-[#e5e5e5] mb-3">
-                  📝 Procedimientos detectados ({analysisResult.procedures.length})
-                </h3>
-                {analysisResult.procedures.map((procedure, index) => (
-                  <div
-                    key={index}
-                    className="bg-[#1a1a1a] p-4 rounded border border-[#333] mb-4 last:mb-0"
+            {/* Carpeta de salida */}
+            <div className="p-3 border-b border-[#2a2a2a]">
+              <p className="text-xs font-semibold text-[#737373] uppercase tracking-wide mb-2">Salida local</p>
+              <input
+                value={outputRoot}
+                onChange={(e) => setOutputRoot(e.target.value)}
+                placeholder="C:\netvault"
+                className="w-full bg-[#262626] border border-[#404040] rounded px-2 py-1 text-xs text-[#e5e5e5] mb-1"
+              />
+              <button
+                type="button"
+                onClick={async () => {
+                  const p = await api.openFolderForSave?.();
+                  if (p) setOutputRoot(p);
+                }}
+                className="text-xs text-[#737373] hover:text-purple-400"
+              >
+                Elegir carpeta raíz…
+              </button>
+            </div>
+
+            {/* Document input */}
+            <div className="p-3 flex-1">
+              <p className="text-xs font-semibold text-[#737373] uppercase tracking-wide mb-2">Documento</p>
+              <div className="flex gap-1 mb-2">
+                {(['file', 'paste'] as const).map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setTextSource(s)}
+                    className={`flex-1 text-xs py-1 rounded transition-colors ${
+                      textSource === s ? 'bg-[#404040] text-[#e5e5e5]' : 'text-[#737373] hover:text-[#a3a3a3]'
+                    }`}
                   >
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-lg">📌</span>
-                      <span className="font-semibold text-[#e5e5e5]">{procedure.name}</span>
-                    </div>
-                    {procedure.responsible && (
-                      <p className="text-sm text-[#737373] mb-2">
-                        <span className="text-[#a3a3a3]">Responsable:</span> {procedure.responsible}
-                      </p>
-                    )}
-                    <div className="mb-2">
-                      <span className="text-sm text-[#737373]">Pasos:</span>
-                      <ol className="mt-1 space-y-1">
-                        {procedure.steps.map((step, stepIndex) => (
-                          <li key={stepIndex} className="flex items-start gap-2 text-sm text-[#a3a3a3]">
-                            <span className="text-[#3b82f6] font-bold">{stepIndex + 1}.</span>
-                            {step}
-                          </li>
-                        ))}
-                      </ol>
-                    </div>
-                    {procedure.relatedEntities.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mt-2">
-                        {procedure.relatedEntities.map((entity, eIndex) => (
-                          <span key={eIndex} className="px-2 py-0.5 bg-[#333] text-xs text-[#a3a3a3] rounded">
-                            {entity}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                    {s === 'file' ? 'Archivo' : 'Pegar texto'}
+                  </button>
                 ))}
               </div>
 
-              {/* Flowchart Code */}
-              {analysisResult.flowchartCode && (
-                <div className="bg-[#262626] rounded-lg p-4">
-                  <h3 className="text-lg font-semibold text-[#e5e5e5] mb-3">
-                    📊 Código Mermaid
-                  </h3>
-                  <pre className="bg-[#1a1a1a] p-4 rounded text-sm text-[#a3a3a3] overflow-x-auto">
-                    <code>{analysisResult.flowchartCode}</code>
-                  </pre>
+              {textSource === 'file' ? (
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={handleOpenFile}
+                    disabled={loadingDoc}
+                    className="w-full flex items-center justify-center gap-1.5 px-3 py-2 border border-dashed border-[#404040] rounded-lg text-xs text-[#737373] hover:text-[#a3a3a3] hover:border-[#555] transition-colors disabled:opacity-50"
+                  >
+                    {loadingDoc ? <Loader size={12} className="animate-spin" /> : <FileText size={12} />}
+                    {textContent ? `${textContent.length.toLocaleString()} caracteres` : 'Abrir .md / .txt / .docx / .pdf'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleLoadSample}
+                    disabled={loadingDoc}
+                    className="w-full text-xs py-1.5 text-purple-400 hover:text-purple-300 border border-purple-500/30 rounded"
+                  >
+                    Cargar ejemplo TC-EJEMPLO-001
+                  </button>
+                  {sourceFilePath && (
+                    <p className="text-[10px] text-[#505050] truncate" title={sourceFilePath}>{sourceFilePath}</p>
+                  )}
                 </div>
+              ) : (
+                <textarea
+                  value={textContent}
+                  onChange={(e) => setTextContent(e.target.value)}
+                  placeholder="Pega aquí el texto del procedimiento..."
+                  className="w-full h-32 bg-[#262626] border border-[#404040] rounded px-2 py-1.5 text-xs text-[#e5e5e5] placeholder-[#4a4a4a] focus:outline-none focus:border-purple-500 resize-none"
+                />
               )}
             </div>
-          )}
 
-          {/* Empty state */}
-          {!analysisResult && !progress && !error && (
-            <div className="flex flex-col items-center justify-center py-20 text-center">
-              <div className="text-6xl mb-4">🔬</div>
-              <h3 className="text-xl font-semibold text-[#e5e5e5] mb-2">
-                Analizador de Procedimientos
-              </h3>
-              <p className="text-[#737373] max-w-md">
-                Carga un documento y usa IA para extraer entidades, procedimientos
-                y generar flujogramas automáticamente.
-              </p>
+            {/* Analyze button */}
+            <div className="p-3 border-t border-[#2a2a2a]">
+              <button
+                onClick={handleAnalyze}
+                disabled={analyzing || !session || !textContent.trim() || !procedureCode.trim()}
+                className="w-full flex items-center justify-center gap-2 py-2.5 bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {analyzing ? <Loader size={14} className="animate-spin" /> : <Play size={14} />}
+                {analyzing ? 'Analizando...' : 'Analizar procedimiento'}
+              </button>
+              {!session && (
+                <p className="text-xs text-center text-[#737373] mt-1">
+                  Inicia sesión (demo: admin / admin123)
+                </p>
+              )}
             </div>
-          )}
-        </div>
+          </div>
 
-        {/* Footer */}
-        <div className="px-6 py-3 border-t border-[#404040] text-xs text-[#737373]">
-          Usa Ollama local o Claude API para el análisis · Configura en AI Settings
+          {/* Right panel: results */}
+          <div className="flex-1 p-4 flex flex-col min-h-0 relative">
+            {showRubric && rubricMarkdown && (
+              <div className="absolute inset-0 z-10 bg-[#141414] p-4 overflow-auto border border-[#404040] rounded-lg m-2">
+                <div className="flex justify-between mb-2">
+                  <span className="text-sm font-semibold text-[#e5e5e5]">Rúbrica activa</span>
+                  <button type="button" onClick={() => setShowRubric(false)} className="text-xs text-[#737373]">Cerrar</button>
+                </div>
+                <pre className="text-xs text-[#a3a3a3] whitespace-pre-wrap font-sans leading-relaxed">{rubricMarkdown}</pre>
+              </div>
+            )}
+            {savedFolder && (
+              <div className="mb-2 p-2 bg-green-500/10 border border-green-500/30 rounded text-xs text-green-400">
+                Paquete guardado en: {savedFolder}
+              </div>
+            )}
+            {progress && (
+              <div className="flex items-center gap-2 mb-3 text-xs text-blue-400">
+                <Loader size={12} className="animate-spin" />
+                {progress}
+              </div>
+            )}
+
+            {analysisError && (
+              <div className="mb-3 p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-xs text-red-400 flex items-start gap-2">
+                <AlertTriangle size={12} className="mt-0.5 flex-shrink-0" />
+                {analysisError}
+              </div>
+            )}
+
+            {result ? (
+              <ResultTabs pkg={result} />
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center text-center">
+                <Server size={40} className="text-[#333] mb-4" />
+                <h3 className="text-base font-semibold text-[#404040] mb-2">
+                  Listo para analizar
+                </h3>
+                <p className="text-sm text-[#4a4a4a] max-w-sm">
+                  Configura el servidor, inicia sesión, carga un procedimiento y pulsa <strong>Analizar</strong>.
+                </p>
+                <div className="mt-6 text-xs text-[#333] space-y-1 text-left">
+                  <p>• Flujograma Mermaid generado automáticamente</p>
+                  <p>• Hallazgos con severidad y sugerencias</p>
+                  <p>• Tiempos extraídos del procedimiento</p>
+                  <p>• Propuestas de mejora (intranet, MCP)</p>
+                  <p>• Corpus para entrenar a ZYMO</p>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

@@ -51,10 +51,12 @@ function createWindow() {
         backgroundColor: '#1a1a1a',
         show: false,
     });
-    // Cargar la app
-    if (process.env.NODE_ENV === 'development') {
-        mainWindow.loadURL('http://localhost:5173');
-        mainWindow.webContents.openDevTools();
+    // En desarrollo (npm run electron:dev) cargar Vite; en build empaquetado, dist/
+    const isDev = !electron_1.app.isPackaged;
+    if (isDev) {
+        const devUrl = process.env.VITE_DEV_SERVER_URL ?? 'http://localhost:5173';
+        mainWindow.loadURL(devUrl);
+        mainWindow.webContents.openDevTools({ mode: 'detach' });
     }
     else {
         mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
@@ -70,15 +72,77 @@ function createWindow() {
 electron_1.ipcMain.handle('fs:readDir', async (_, dirPath) => {
     try {
         const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
-        return entries.map(entry => ({
-            name: entry.name,
-            path: path.join(dirPath, entry.name),
-            isDirectory: entry.isDirectory(),
-            isFile: entry.isFile(),
+        return Promise.all(entries.map(async (entry) => {
+            const fullPath = path.join(dirPath, entry.name);
+            let size = 0;
+            let modified = null;
+            try {
+                const stat = await fs.promises.stat(fullPath);
+                size = stat.size;
+                modified = stat.mtime;
+            }
+            catch {
+                // ignore (permission errors, broken symlinks)
+            }
+            return {
+                name: entry.name,
+                path: fullPath,
+                isDirectory: entry.isDirectory(),
+                isFile: entry.isFile(),
+                size,
+                modified,
+            };
         }));
     }
     catch (error) {
         throw new Error(`No se pudo leer el directorio: ${error.message}`);
+    }
+});
+// ─── Grafo vault: escaneo .md en main (evita cientos de IPC readDir) ─────────
+const VAULT_SKIP_DIRS = new Set([
+    'node_modules', 'dist', '.git', 'venv', '.obsidian', 'dist-electron',
+    '__pycache__', '.cursor', 'build', 'coverage', '.venv',
+]);
+const VAULT_MAX_MD = 400;
+const VAULT_MAX_DEPTH = 10;
+async function vaultCollectMarkdown(dirPath, depth, out) {
+    if (depth > VAULT_MAX_DEPTH || out.length >= VAULT_MAX_MD)
+        return;
+    let entries;
+    try {
+        entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+    }
+    catch {
+        return;
+    }
+    for (const entry of entries) {
+        if (out.length >= VAULT_MAX_MD)
+            break;
+        const fullPath = path.join(dirPath, entry.name);
+        if (entry.isDirectory()) {
+            if (VAULT_SKIP_DIRS.has(entry.name) || entry.name.startsWith('.'))
+                continue;
+            await vaultCollectMarkdown(fullPath, depth + 1, out);
+        }
+        else if (/\.md$/i.test(entry.name)) {
+            out.push(fullPath);
+        }
+    }
+}
+electron_1.ipcMain.handle('graph:scanMarkdown', async (_, rootPath) => {
+    try {
+        const root = path.resolve(rootPath);
+        const stat = await fs.promises.stat(root);
+        if (!stat.isDirectory()) {
+            return { success: false, root, files: [], count: 0, error: 'La ruta no es una carpeta' };
+        }
+        const files = [];
+        await vaultCollectMarkdown(root, 0, files);
+        return { success: true, root, files, count: files.length };
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : 'Error al escanear';
+        return { success: false, root: rootPath, files: [], count: 0, error: message };
     }
 });
 electron_1.ipcMain.handle('fs:stats', async (_, filePath) => {
@@ -90,15 +154,32 @@ electron_1.ipcMain.handle('fs:stats', async (_, filePath) => {
         isDirectory: stats.isDirectory(),
     };
 });
+async function copyRecursive(src, dst) {
+    const stat = await fs.promises.stat(src);
+    if (stat.isDirectory()) {
+        await fs.promises.mkdir(dst, { recursive: true });
+        const entries = await fs.promises.readdir(src);
+        await Promise.all(entries.map(e => copyRecursive(path.join(src, e), path.join(dst, e))));
+    }
+    else {
+        await fs.promises.copyFile(src, dst);
+    }
+}
 electron_1.ipcMain.handle('fs:copy', async (_, src, dst) => {
-    await fs.promises.copyFile(src, dst);
+    await copyRecursive(src, dst);
 });
 electron_1.ipcMain.handle('fs:move', async (_, src, dst) => {
     await fs.promises.rename(src, dst);
 });
 electron_1.ipcMain.handle('fs:delete', async (_, filePath, permanent) => {
     if (permanent) {
-        await fs.promises.unlink(filePath);
+        const stat = await fs.promises.stat(filePath);
+        if (stat.isDirectory()) {
+            await fs.promises.rm(filePath, { recursive: true, force: true });
+        }
+        else {
+            await fs.promises.unlink(filePath);
+        }
     }
     else {
         await electron_1.shell.trashItem(filePath);
@@ -193,6 +274,20 @@ electron_1.ipcMain.handle('dialog:message', async (_, options) => {
     });
     return result.response;
 });
+// IPC Handlers - System paths
+electron_1.ipcMain.handle('system:getPaths', () => {
+    return {
+        home: electron_1.app.getPath('home'),
+        downloads: electron_1.app.getPath('downloads'),
+        documents: electron_1.app.getPath('documents'),
+        desktop: electron_1.app.getPath('desktop'),
+    };
+});
+electron_1.ipcMain.handle('system:getAppRoot', () => {
+    return electron_1.app.isPackaged
+        ? path.join(path.dirname(electron_1.app.getPath('exe')), '..')
+        : path.join(__dirname, '..');
+});
 // IPC Handlers - Config
 electron_1.ipcMain.handle('config:getPath', () => {
     return electron_1.app.getPath('userData');
@@ -211,17 +306,47 @@ electron_1.ipcMain.handle('config:write', async (_, config) => {
     const configPath = path.join(electron_1.app.getPath('userData'), 'config.json');
     await fs.promises.writeFile(configPath, JSON.stringify(config, null, 2), 'utf-8');
 });
-// IPC Handlers - Terminal
-electron_1.ipcMain.handle('terminal:execute', async (_, cmd, cwd) => {
-    const { exec } = require('child_process');
+// ─── Terminal ────────────────────────────────────────────────────────────────
+/** Remove ANSI escape codes and control characters from terminal output */
+function stripAnsi(str) {
+    return str
+        .replace(/\x1B\[[0-9;]*[A-Za-z]/g, '') // CSI sequences (colors, cursor)
+        .replace(/\x1B\][^\x07]*\x07/g, '') // OSC sequences (title)
+        .replace(/\x1B[()][0-9A-Za-z]/g, '') // charset sequences
+        .replace(/\x1B[@-_]/g, '') // Fe sequences
+        .replace(/\r\n/g, '\n') // normalize CRLF
+        .replace(/\r(?!\n)/g, '\n'); // lone CR
+}
+electron_1.ipcMain.handle('terminal:execute', (event, cmd, cwd) => {
+    const { spawn } = require('child_process');
     return new Promise((resolve) => {
-        exec(cmd, { cwd }, (error, stdout, stderr) => {
-            if (error) {
-                resolve(stderr || error.message);
+        const proc = spawn('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', cmd], {
+            cwd,
+            windowsHide: true,
+            env: { ...process.env, TERM: 'dumb', NO_COLOR: '1' },
+        });
+        let fullOutput = '';
+        const sendChunk = (text, isErr) => {
+            const clean = stripAnsi(text);
+            if (!clean)
+                return;
+            fullOutput += clean;
+            // Stream chunk to renderer while command is still running
+            if (!event.sender.isDestroyed()) {
+                event.sender.send('terminal:stream', { type: isErr ? 'stderr' : 'stdout', text: clean });
             }
-            else {
-                resolve(stdout);
+        };
+        proc.stdout.on('data', (chunk) => sendChunk(chunk.toString('utf8'), false));
+        proc.stderr.on('data', (chunk) => sendChunk(chunk.toString('utf8'), true));
+        proc.on('error', (err) => {
+            sendChunk(`Error al ejecutar: ${err.message}\n`, true);
+            resolve(fullOutput || err.message);
+        });
+        proc.on('close', (code) => {
+            if (!event.sender.isDestroyed()) {
+                event.sender.send('terminal:stream', { type: 'done', code });
             }
+            resolve(fullOutput);
         });
     });
 });
@@ -318,6 +443,282 @@ electron_1.ipcMain.handle('editors:openWith', async (_, editorPath, filePath) =>
         }
     });
 });
+let indexEntries = [];
+let indexing = false;
+const INDEX_CACHE_FILE = 'index-cache.json';
+async function scanDir(dirPath, depth, results) {
+    if (depth <= 0)
+        return;
+    let entries;
+    try {
+        entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+    }
+    catch {
+        return;
+    }
+    await Promise.all(entries.map(async (entry) => {
+        const fullPath = path.join(dirPath, entry.name);
+        const isDir = entry.isDirectory();
+        let size = 0;
+        let modified = Date.now();
+        try {
+            const stat = await fs.promises.stat(fullPath);
+            size = stat.size;
+            modified = stat.mtimeMs;
+        }
+        catch {
+            // ignore permission errors
+        }
+        const ext = isDir ? '' : (entry.name.includes('.') ? '.' + entry.name.split('.').pop().toLowerCase() : '');
+        results.push({ name: entry.name, path: fullPath, isDirectory: isDir, size, modified, extension: ext });
+        if (isDir)
+            await scanDir(fullPath, depth - 1, results);
+    }));
+}
+// ─── LightRAG graph proxy (evita CORS desde renderer) ────────────────────────
+electron_1.ipcMain.handle('graph:lightrag', async (_, intranetUrl, token, opts = {}) => {
+    try {
+        const base = intranetUrl.replace(/\/$/, '');
+        const params = new URLSearchParams({
+            max_nodes: String(opts.maxNodes ?? 200),
+            max_edges: String(opts.maxEdges ?? 600),
+            ...(opts.q ? { q: opts.q } : {}),
+        });
+        const url = `${base}/api/grafo/lightrag?${params}`;
+        const http = url.startsWith('https') ? require('https') : require('http');
+        const body = await new Promise((resolve, reject) => {
+            const req = http.get(url, {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    Accept: 'application/json',
+                },
+                timeout: 15000,
+            }, (res) => {
+                const chunks = [];
+                res.on('data', (c) => chunks.push(c));
+                res.on('end', () => {
+                    const text = Buffer.concat(chunks).toString('utf-8');
+                    if ((res.statusCode ?? 0) >= 400) {
+                        reject(new Error(`HTTP ${res.statusCode}: ${text.slice(0, 200)}`));
+                    }
+                    else {
+                        resolve(text);
+                    }
+                });
+            });
+            req.on('error', reject);
+            req.on('timeout', () => { req.destroy(); reject(new Error('Timeout conectando a la intranet')); });
+        });
+        const json = JSON.parse(body);
+        return { success: true, data: json };
+    }
+    catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { success: false, error: msg, data: { nodes: [], edges: [], meta: {} } };
+    }
+});
+electron_1.ipcMain.handle('index:scan', async (_, rootPath, maxDepth = 5) => {
+    if (indexing)
+        return { success: false, count: indexEntries.length, entries: [] };
+    indexing = true;
+    const start = Date.now();
+    try {
+        const results = [];
+        await scanDir(rootPath, maxDepth, results);
+        indexEntries = results;
+        const elapsed = Date.now() - start;
+        const cachePath = path.join(electron_1.app.getPath('userData'), INDEX_CACHE_FILE);
+        await fs.promises.writeFile(cachePath, JSON.stringify({ rootPath, ts: Date.now(), entries: results }), 'utf-8');
+        return { success: true, count: results.length, elapsed, entries: results };
+    }
+    catch (error) {
+        return { success: false, count: 0, error: error.message, entries: [] };
+    }
+    finally {
+        indexing = false;
+    }
+});
+electron_1.ipcMain.handle('index:stats', () => ({
+    totalFiles: indexEntries.filter(e => !e.isDirectory).length,
+    totalDirs: indexEntries.filter(e => e.isDirectory).length,
+    isIndexing: indexing,
+}));
+electron_1.ipcMain.handle('index:loadCache', async () => {
+    try {
+        const cachePath = path.join(electron_1.app.getPath('userData'), INDEX_CACHE_FILE);
+        const raw = await fs.promises.readFile(cachePath, 'utf-8');
+        const { entries } = JSON.parse(raw);
+        indexEntries = entries;
+        return { success: true, count: entries.length, entries };
+    }
+    catch {
+        return { success: false, count: 0, entries: [] };
+    }
+});
+let serverSession = null;
+let serverUrl = 'http://localhost:3847';
+electron_1.ipcMain.handle('server:getUrl', () => serverUrl);
+electron_1.ipcMain.handle('server:setUrl', (_event, url) => { serverUrl = url; });
+electron_1.ipcMain.handle('server:login', async (_event, username, password) => {
+    try {
+        const https = require('https');
+        const http = require('http');
+        const url = new URL('/auth/login', serverUrl);
+        const body = JSON.stringify({ username, password });
+        const transport = url.protocol === 'https:' ? https : http;
+        const data = await new Promise((resolve, reject) => {
+            const req = transport.request({ hostname: url.hostname, port: url.port, path: url.pathname, method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } }, (res) => {
+                let raw = '';
+                res.on('data', (c) => { raw += c.toString(); });
+                res.on('end', () => resolve(raw));
+            });
+            req.on('error', reject);
+            req.write(body);
+            req.end();
+        });
+        const json = JSON.parse(data);
+        if (json.ok) {
+            serverSession = { token: json.data.token, username: json.data.user.username, role: json.data.user.role };
+            return { ok: true, data: { username: json.data.user.username, role: json.data.user.role, expiresIn: json.data.expiresIn } };
+        }
+        return { ok: false, error: json.error ?? 'Login fallido' };
+    }
+    catch (err) {
+        return { ok: false, error: `No se pudo conectar al servidor: ${err.message}` };
+    }
+});
+electron_1.ipcMain.handle('server:logout', () => { serverSession = null; return { ok: true }; });
+electron_1.ipcMain.handle('server:session', () => {
+    if (!serverSession)
+        return { ok: false, error: 'Sin sesión activa' };
+    return { ok: true, data: { username: serverSession.username, role: serverSession.role } };
+});
+electron_1.ipcMain.handle('server:health', async () => {
+    try {
+        const https = require('https');
+        const http = require('http');
+        const url = new URL('/health', serverUrl);
+        const transport = url.protocol === 'https:' ? https : http;
+        const data = await new Promise((resolve, reject) => {
+            const req = transport.request({ hostname: url.hostname, port: url.port, path: url.pathname, method: 'GET', timeout: 3000 }, (res) => {
+                let raw = '';
+                res.on('data', (c) => { raw += c.toString(); });
+                res.on('end', () => resolve(raw));
+            });
+            req.on('error', reject);
+            req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
+            req.end();
+        });
+        const json = JSON.parse(data);
+        return { ok: true, reachable: true, ...json.data };
+    }
+    catch {
+        return { ok: false, reachable: false, error: 'Servidor no disponible' };
+    }
+});
+electron_1.ipcMain.handle('server:runAnalysis', async (_event, payload) => {
+    if (!serverSession)
+        return { ok: false, error: 'No autenticado. Inicia sesión primero.' };
+    try {
+        const https = require('https');
+        const http = require('http');
+        const url = new URL('/analysis/run', serverUrl);
+        const body = JSON.stringify(payload);
+        const transport = url.protocol === 'https:' ? https : http;
+        const data = await new Promise((resolve, reject) => {
+            const req = transport.request({
+                hostname: url.hostname, port: url.port, path: url.pathname, method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Content-Length': Buffer.byteLength(body),
+                    'Authorization': `Bearer ${serverSession.token}`,
+                },
+                timeout: 120000,
+            }, (res) => {
+                let raw = '';
+                res.on('data', (c) => { raw += c.toString(); });
+                res.on('end', () => resolve(raw));
+            });
+            req.on('error', reject);
+            req.on('timeout', () => { req.destroy(); reject(new Error('Timeout del análisis')); });
+            req.write(body);
+            req.end();
+        });
+        return JSON.parse(data);
+    }
+    catch (err) {
+        return { ok: false, error: err.message };
+    }
+});
+electron_1.ipcMain.handle('server:getRubric', async () => {
+    try {
+        const https = require('https');
+        const http = require('http');
+        const url = new URL('/analysis/rubric', serverUrl);
+        const transport = url.protocol === 'https:' ? https : http;
+        const data = await new Promise((resolve, reject) => {
+            const req = transport.request({ hostname: url.hostname, port: url.port, path: url.pathname, method: 'GET', timeout: 5000 }, (res) => {
+                let raw = '';
+                res.on('data', (c) => { raw += c.toString(); });
+                res.on('end', () => resolve(raw));
+            });
+            req.on('error', reject);
+            req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
+            req.end();
+        });
+        return JSON.parse(data);
+    }
+    catch (err) {
+        return { ok: false, error: err.message };
+    }
+});
+function findRubricDir() {
+    const candidates = [
+        path.join(process.cwd(), 'resources', 'rubrica'),
+        path.join(__dirname, '..', 'resources', 'rubrica'),
+        path.join(__dirname, '..', '..', 'resources', 'rubrica'),
+    ];
+    for (const dir of candidates) {
+        if (fs.existsSync(path.join(dir, 'rubrica-agent.json')))
+            return dir;
+    }
+    return candidates[0];
+}
+electron_1.ipcMain.handle('analysis:getLocalRubric', async () => {
+    try {
+        const dir = findRubricDir();
+        const json = JSON.parse(await fs.promises.readFile(path.join(dir, 'rubrica-agent.json'), 'utf-8'));
+        const md = await fs.promises.readFile(path.join(dir, 'RUBRICA_PROCEDIMIENTOS.md'), 'utf-8');
+        return { ok: true, data: { json, markdown: md } };
+    }
+    catch (err) {
+        return { ok: false, error: err.message };
+    }
+});
+electron_1.ipcMain.handle('analysis:savePackage', async (_event, payload) => {
+    const { outputRoot, area, procedureCode, files, originalPath } = payload;
+    const folder = path.join(outputRoot, area, procedureCode);
+    await fs.promises.mkdir(folder, { recursive: true });
+    for (const [name, content] of Object.entries(files)) {
+        await fs.promises.writeFile(path.join(folder, name), content, 'utf-8');
+    }
+    if (originalPath && fs.existsSync(originalPath)) {
+        const ext = path.extname(originalPath) || '.bin';
+        await fs.promises.copyFile(originalPath, path.join(folder, `original${ext}`));
+    }
+    return { ok: true, folder };
+});
+electron_1.ipcMain.handle('dialog:openFolderForSave', async () => {
+    const result = await electron_1.dialog.showOpenDialog({
+        properties: ['openDirectory', 'createDirectory'],
+        title: 'Carpeta raíz netvault (contiene T&C, P&C, Transportes)',
+    });
+    if (result.canceled || !result.filePaths[0])
+        return null;
+    return result.filePaths[0];
+});
+// ─────────────────────────────────────────────────────────────────────────────
 // App lifecycle
 electron_1.app.whenReady().then(() => {
     createWindow();

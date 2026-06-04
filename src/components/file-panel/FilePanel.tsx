@@ -37,7 +37,6 @@ export function FilePanel({
   
   // Create dialog state
   const [showCreateDialog, setShowCreateDialog] = useState<'file' | 'folder' | null>(null);
-  const [createName, setCreateName] = useState('');
 
   const loadDirectory = useCallback(async (dirPath: string) => {
     setLoading(true);
@@ -213,25 +212,6 @@ export function FilePanel({
     await fileService.showInFolder(entry.path);
   };
 
-  // Create new file/folder
-  const handleCreate = async () => {
-    if (!createName.trim()) return;
-
-    try {
-      if (showCreateDialog === 'folder') {
-        await fileService.createFolder(path, createName);
-      } else {
-        await fileService.createFile(path, createName);
-      }
-      loadDirectory(path);
-    } catch (error) {
-      console.error('Error creating:', error);
-    }
-
-    setShowCreateDialog(null);
-    setCreateName('');
-  };
-
   const handleOpenFolder = async () => {
     const folderPath = await fileService.showOpenFolderDialog();
     if (folderPath) {
@@ -362,14 +342,21 @@ export function FilePanel({
           label="Nombre"
           initialValue=""
           placeholder={showCreateDialog === 'folder' ? 'Nombre de la carpeta' : 'Nombre del archivo'}
-          onConfirm={() => {
-            setCreateName('');
-            handleCreate();
-          }}
-          onCancel={() => {
+          onConfirm={async (name) => {
+            const type = showCreateDialog;
             setShowCreateDialog(null);
-            setCreateName('');
+            try {
+              if (type === 'folder') {
+                await fileService.createFolder(path, name);
+              } else {
+                await fileService.createFile(path, name);
+              }
+              loadDirectory(path);
+            } catch (error) {
+              console.error('Error creating:', error);
+            }
           }}
+          onCancel={() => setShowCreateDialog(null)}
           validation={fileService.isValidFileName}
         />
       )}
