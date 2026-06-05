@@ -25,8 +25,8 @@ export interface SigProcedimiento {
 
 export interface SigCommitPayload {
   procedimientoId:   number;
-  contenidoOriginal: string;
-  contenidoAgente:   string;
+  contenidoOriginal?: string;
+  contenidoAgente?:   string;
   flujogramaMmd?:    string;
   sinCambios:        boolean;
   mensaje:           string;
@@ -35,6 +35,14 @@ export interface SigCommitPayload {
 
 export async function getSigAreas() {
   return intranetGet<SigArea[]>('/sig-api/api/areas');
+}
+
+export async function createSigArea(data: {
+  nombre: string;
+  descripcion?: string;
+  color?: string;
+}) {
+  return intranetPost<SigArea>('/sig-api/api/areas', data);
 }
 
 export async function getSigProcedimientos(areaId?: number) {

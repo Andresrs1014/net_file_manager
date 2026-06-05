@@ -4,7 +4,7 @@ import {
   AlertTriangle, CheckCircle, Clock, Lightbulb,
   Database, Download, X, ChevronDown, Loader, Send
 } from 'lucide-react';
-import type { AnalysisPackage, ProcedureArea, UserRole, FindingSeverity } from '../../types';
+import type { AnalysisPackage, UserRole, FindingSeverity } from '../../types';
 import { MermaidPreview } from './MermaidPreview';
 import {
   extractTextFromPath,
@@ -13,8 +13,9 @@ import {
   buildPackageFiles,
   isAnalyzableFile,
 } from '../../services/procedureAnalysisService';
-import { getStoredSession } from '../../services/authService';
+import { getStoredSession, loginToIntranet, logoutFromIntranet } from '../../services/authService';
 import { intranetPost } from '../../services/intranetService';
+import { getSigAreas, type SigArea } from '../../services/sigCommitService';
 import { SigCommitModal } from '../sig/SigCommitModal';
 
 // ─── Sub-componentes de resultado ─────────────────────────────────────────────
@@ -203,23 +204,33 @@ interface Props {
 }
 
 export function AnalyzerPanel({ onClose, filePath, defaultOutputRoot, onAnalysisComplete, onOpenGraph }: Props) {
-  // Server connection state
+  // Server connection state (fallback offline)
   const [serverUrl, setServerUrl] = useState('http://localhost:3847');
   const [serverHealth, setServerHealth] = useState<{
     reachable: boolean; anthropicConfigured?: boolean; model?: string; mode?: string;
   } | null>(null);
   const [checkingHealth, setCheckingHealth] = useState(false);
+  const [showOfflineSection, setShowOfflineSection] = useState(false);
 
-  // Auth state
+  // Auth state — local server (fallback)
   const [session, setSession] = useState<{ username: string; role: UserRole } | null>(null);
   const [loginUsername, setLoginUsername] = useState('admin');
   const [loginPassword, setLoginPassword] = useState('');
   const [loggingIn, setLoggingIn] = useState(false);
   const [loginError, setLoginError] = useState('');
 
+  // Auth state — intranet ZYMO (primary)
+  const [intranetUrl, setIntranetUrl] = useState('https://zymointranet.com');
+  const [intranetEmail, setIntranetEmail] = useState('');
+  const [intranetPw, setIntranetPw] = useState('');
+  const [intranetUser, setIntranetUser] = useState<{ email: string; full_name: string | null } | null>(null);
+  const [intranetLoggingIn, setIntranetLoggingIn] = useState(false);
+  const [intranetLoginError, setIntranetLoginError] = useState('');
+
   // Analysis config
   const [procedureCode, setProcedureCode] = useState('');
-  const [area, setArea] = useState<ProcedureArea>('T&C');
+  const [area, setArea] = useState('');
+  const [sigAreas, setSigAreas] = useState<SigArea[]>([]);
   const [textContent, setTextContent] = useState('');
   const [textSource, setTextSource] = useState<'file' | 'paste'>('file');
 
@@ -275,10 +286,21 @@ export function AnalyzerPanel({ onClose, filePath, defaultOutputRoot, onAnalysis
   useEffect(() => {
     api.serverGetUrl?.().then((url) => { if (url) setServerUrl(url); });
     api.serverSession?.().then((r) => { if (r.ok && r.data) setSession(r.data); });
-    checkHealth();
     loadRubric();
     if (defaultOutputRoot) setOutputRoot(defaultOutputRoot);
-    getStoredSession().then((s) => setIntranetLoggedIn(s.loggedIn));
+    // Verificar sesión de intranet guardada y cargar áreas del SIG
+    getStoredSession().then(async (s) => {
+      setIntranetLoggedIn(s.loggedIn);
+      if (s.loggedIn && s.user) {
+        setIntranetUser({ email: s.user.email, full_name: s.user.full_name });
+        if (s.intranetUrl) setIntranetUrl(s.intranetUrl);
+        const areasRes = await getSigAreas();
+        if (areasRes.ok && areasRes.data && areasRes.data.length > 0) {
+          setSigAreas(areasRes.data);
+          setArea(areasRes.data[0].nombre);
+        }
+      }
+    });
   }, []);
 
   useEffect(() => {
@@ -302,7 +324,33 @@ export function AnalyzerPanel({ onClose, filePath, defaultOutputRoot, onAnalysis
     checkHealth();
   };
 
-  // ─── Auth ────────────────────────────────────────────────────────────────────
+  // ─── Auth intranet ZYMO ──────────────────────────────────────────────────────
+  const handleIntranetLogin = async () => {
+    if (!intranetUrl.trim() || !intranetEmail.trim() || !intranetPw) return;
+    setIntranetLoggingIn(true);
+    setIntranetLoginError('');
+    try {
+      const res = await loginToIntranet(intranetUrl.replace(/\/$/, ''), intranetEmail, intranetPw);
+      if (res.ok && res.user) {
+        setIntranetLoggedIn(true);
+        setIntranetUser({ email: res.user.email, full_name: res.user.full_name });
+        setIntranetPw('');
+      } else {
+        setIntranetLoginError(res.error ?? 'Credenciales incorrectas');
+      }
+    } finally {
+      setIntranetLoggingIn(false);
+    }
+  };
+
+  const handleIntranetLogout = async () => {
+    await logoutFromIntranet();
+    setIntranetLoggedIn(false);
+    setIntranetUser(null);
+    setResult(null);
+  };
+
+  // ─── Auth local server (fallback offline) ────────────────────────────────────
   const handleLogin = async () => {
     setLoggingIn(true);
     setLoginError('');
@@ -491,77 +539,115 @@ export function AnalyzerPanel({ onClose, filePath, defaultOutputRoot, onAnalysis
           {/* Left panel: config */}
           <div className="w-72 flex-shrink-0 border-r border-[#2a2a2a] flex flex-col overflow-y-auto">
 
-            {/* Server config */}
+            {/* Auth — intranet ZYMO (primary) */}
             <div className="p-3 border-b border-[#2a2a2a]">
-              <p className="text-xs font-semibold text-[#737373] uppercase tracking-wide mb-2">Servidor</p>
-              <div className="flex gap-1">
-                <input
-                  value={serverUrl}
-                  onChange={(e) => setServerUrl(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleSetUrl()}
-                  className="flex-1 bg-[#262626] border border-[#404040] rounded px-2 py-1 text-xs text-[#e5e5e5] placeholder-[#4a4a4a] focus:outline-none focus:border-purple-500"
-                  placeholder="http://localhost:3847"
-                />
-                <button
-                  onClick={handleSetUrl}
-                  disabled={checkingHealth}
-                  className="px-2 py-1 bg-[#262626] hover:bg-[#333] text-[#737373] hover:text-[#e5e5e5] rounded border border-[#404040] transition-colors"
-                >
-                  {checkingHealth ? <Loader size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-                </button>
-              </div>
-
-              {serverHealth && (
-                <div className={`mt-2 flex items-center gap-1.5 text-xs ${serverHealth.reachable ? 'text-green-400' : 'text-red-400'}`}>
-                  {serverHealth.reachable ? <CheckCircle size={12} /> : <AlertTriangle size={12} />}
-                  {serverHealth.reachable
-                    ? `Conectado · ${serverHealth.anthropicConfigured ? 'Claude ✓' : 'mock'} · ${serverHealth.model ?? ''}`
-                    : 'Sin conexión — ¿está corriendo el servidor?'}
-                </div>
-              )}
-            </div>
-
-            {/* Auth */}
-            <div className="p-3 border-b border-[#2a2a2a]">
-              <p className="text-xs font-semibold text-[#737373] uppercase tracking-wide mb-2">Sesión</p>
-              {session ? (
+              <p className="text-xs font-semibold text-[#737373] uppercase tracking-wide mb-2">Conexión ZYMO</p>
+              {intranetLoggedIn ? (
                 <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-[#e5e5e5]">{session.username}</p>
-                    <p className="text-xs text-[#737373]">{session.role}</p>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-xs text-emerald-400 truncate">{intranetUser?.full_name || intranetUser?.email || 'Conectado'}</p>
+                      <p className="text-[10px] text-[#505050] truncate">{intranetUrl}</p>
+                    </div>
                   </div>
                   <button
-                    onClick={handleLogout}
-                    className="flex items-center gap-1 text-xs text-[#737373] hover:text-red-400 transition-colors"
+                    onClick={handleIntranetLogout}
+                    className="flex items-center gap-1 text-xs text-[#737373] hover:text-red-400 transition-colors shrink-0 ml-2"
                   >
-                    <LogOut size={12} /> Salir
+                    <LogOut size={12} />
                   </button>
                 </div>
               ) : (
                 <div className="space-y-2">
                   <input
-                    value={loginUsername}
-                    onChange={(e) => setLoginUsername(e.target.value)}
-                    placeholder="Usuario"
-                    className="w-full bg-[#262626] border border-[#404040] rounded px-2 py-1 text-xs text-[#e5e5e5] placeholder-[#4a4a4a] focus:outline-none focus:border-purple-500"
+                    value={intranetUrl}
+                    onChange={(e) => setIntranetUrl(e.target.value)}
+                    placeholder="https://zymointranet.com"
+                    className="w-full bg-[#262626] border border-[#404040] rounded px-2 py-1 text-xs text-[#e5e5e5] placeholder-[#4a4a4a] focus:outline-none focus:border-emerald-500"
+                  />
+                  <input
+                    type="email"
+                    value={intranetEmail}
+                    onChange={(e) => setIntranetEmail(e.target.value)}
+                    placeholder="usuario@zymo.com"
+                    autoComplete="username"
+                    className="w-full bg-[#262626] border border-[#404040] rounded px-2 py-1 text-xs text-[#e5e5e5] placeholder-[#4a4a4a] focus:outline-none focus:border-emerald-500"
                   />
                   <input
                     type="password"
-                    value={loginPassword}
-                    onChange={(e) => setLoginPassword(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+                    value={intranetPw}
+                    onChange={(e) => setIntranetPw(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleIntranetLogin()}
                     placeholder="Contraseña"
-                    className="w-full bg-[#262626] border border-[#404040] rounded px-2 py-1 text-xs text-[#e5e5e5] placeholder-[#4a4a4a] focus:outline-none focus:border-purple-500"
+                    autoComplete="current-password"
+                    className="w-full bg-[#262626] border border-[#404040] rounded px-2 py-1 text-xs text-[#e5e5e5] placeholder-[#4a4a4a] focus:outline-none focus:border-emerald-500"
                   />
-                  {loginError && <p className="text-xs text-red-400">{loginError}</p>}
+                  {intranetLoginError && <p className="text-xs text-red-400">{intranetLoginError}</p>}
                   <button
-                    onClick={handleLogin}
-                    disabled={loggingIn || !serverHealth?.reachable}
-                    className="w-full flex items-center justify-center gap-1 px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white text-xs rounded transition-colors disabled:opacity-50"
+                    onClick={handleIntranetLogin}
+                    disabled={intranetLoggingIn || !intranetUrl.trim() || !intranetEmail.trim() || !intranetPw}
+                    className="w-full flex items-center justify-center gap-1 px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white text-xs rounded transition-colors disabled:opacity-50"
                   >
-                    {loggingIn ? <Loader size={12} className="animate-spin" /> : <LogIn size={12} />}
-                    {loggingIn ? 'Conectando...' : 'Iniciar sesión'}
+                    {intranetLoggingIn ? <Loader size={12} className="animate-spin" /> : <LogIn size={12} />}
+                    {intranetLoggingIn ? 'Conectando…' : 'Conectar a ZYMO'}
                   </button>
+                </div>
+              )}
+            </div>
+
+            {/* Auth — servidor local (modo offline, colapsable) */}
+            <div className="border-b border-[#2a2a2a]">
+              <button
+                onClick={() => setShowOfflineSection(v => !v)}
+                className="w-full flex items-center justify-between px-3 py-2 text-[10px] text-[#505050] hover:text-[#737373] transition-colors"
+              >
+                <span className="uppercase tracking-wide font-semibold">Modo offline (servidor local)</span>
+                <span>{showOfflineSection ? '▾' : '▸'}</span>
+              </button>
+              {showOfflineSection && (
+                <div className="px-3 pb-3 space-y-2">
+                  <div className="flex gap-1">
+                    <input
+                      value={serverUrl}
+                      onChange={(e) => setServerUrl(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSetUrl()}
+                      className="flex-1 bg-[#262626] border border-[#404040] rounded px-2 py-1 text-xs text-[#e5e5e5] placeholder-[#4a4a4a] focus:outline-none focus:border-purple-500"
+                      placeholder="http://localhost:3847"
+                    />
+                    <button onClick={handleSetUrl} disabled={checkingHealth}
+                      className="px-2 py-1 bg-[#262626] hover:bg-[#333] text-[#737373] rounded border border-[#404040]">
+                      {checkingHealth ? <Loader size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                    </button>
+                  </div>
+                  {serverHealth && (
+                    <div className={`flex items-center gap-1 text-[10px] ${serverHealth.reachable ? 'text-green-400' : 'text-red-400'}`}>
+                      {serverHealth.reachable ? <CheckCircle size={10} /> : <AlertTriangle size={10} />}
+                      {serverHealth.reachable ? `Conectado · ${serverHealth.model ?? ''}` : 'Sin conexión'}
+                    </div>
+                  )}
+                  {session ? (
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-[#e5e5e5]">{session.username}</p>
+                      <button onClick={handleLogout} className="text-xs text-[#737373] hover:text-red-400 flex items-center gap-1">
+                        <LogOut size={12} /> Salir
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <input value={loginUsername} onChange={(e) => setLoginUsername(e.target.value)} placeholder="Usuario"
+                        className="w-full bg-[#262626] border border-[#404040] rounded px-2 py-1 text-xs text-[#e5e5e5] placeholder-[#4a4a4a] focus:outline-none focus:border-purple-500" />
+                      <input type="password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleLogin()} placeholder="Contraseña"
+                        className="w-full bg-[#262626] border border-[#404040] rounded px-2 py-1 text-xs text-[#e5e5e5] placeholder-[#4a4a4a] focus:outline-none focus:border-purple-500" />
+                      {loginError && <p className="text-xs text-red-400">{loginError}</p>}
+                      <button onClick={handleLogin} disabled={loggingIn || !serverHealth?.reachable}
+                        className="w-full flex items-center justify-center gap-1 px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white text-xs rounded transition-colors disabled:opacity-50">
+                        {loggingIn ? <Loader size={12} className="animate-spin" /> : <LogIn size={12} />}
+                        {loggingIn ? 'Conectando...' : 'Iniciar sesión'}
+                      </button>
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -582,16 +668,27 @@ export function AnalyzerPanel({ onClose, filePath, defaultOutputRoot, onAnalysis
                 <div>
                   <label className="text-xs text-[#737373]">Área</label>
                   <div className="relative mt-0.5">
-                    <select
-                      value={area}
-                      onChange={(e) => setArea(e.target.value as ProcedureArea)}
-                      className="w-full appearance-none bg-[#262626] border border-[#404040] rounded px-2 py-1 text-xs text-[#e5e5e5] focus:outline-none focus:border-purple-500"
-                    >
-                      <option value="T&C">T&amp;C</option>
-                      <option value="P&C">P&amp;C</option>
-                      <option value="Transportes">Transportes</option>
-                    </select>
-                    <ChevronDown size={10} className="absolute right-2 top-1/2 -translate-y-1/2 text-[#737373] pointer-events-none" />
+                    {sigAreas.length > 0 ? (
+                      <>
+                        <select
+                          value={area}
+                          onChange={(e) => setArea(e.target.value)}
+                          className="w-full appearance-none bg-[#262626] border border-[#404040] rounded px-2 py-1 text-xs text-[#e5e5e5] focus:outline-none focus:border-purple-500"
+                        >
+                          {sigAreas.map((a) => (
+                            <option key={a.id} value={a.nombre}>{a.nombre}</option>
+                          ))}
+                        </select>
+                        <ChevronDown size={10} className="absolute right-2 top-1/2 -translate-y-1/2 text-[#737373] pointer-events-none" />
+                      </>
+                    ) : (
+                      <input
+                        value={area}
+                        onChange={(e) => setArea(e.target.value)}
+                        placeholder="Nombre del área…"
+                        className="w-full bg-[#262626] border border-[#404040] rounded px-2 py-1 text-xs text-[#e5e5e5] focus:outline-none focus:border-purple-500"
+                      />
+                    )}
                   </div>
                 </div>
               </div>

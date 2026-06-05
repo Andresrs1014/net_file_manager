@@ -66,7 +66,7 @@ export interface AppConfig {
 
 // ─── Tipos de procedimientos y análisis (sincronizados con server/src/types) ──
 export type UserRole = 'aprobador_maximo' | 'analista' | 'lector';
-export type ProcedureArea = 'T&C' | 'P&C' | 'Transportes';
+export type ProcedureArea = string;  // Dinámico — áreas vienen del SIG
 export type ProcedureStatus = 'borrador' | 'en_revision' | 'vigente' | 'obsoleto';
 export type SyncStatus = 'local' | 'pendiente' | 'sincronizado' | 'conflicto';
 export type FindingSeverity = 'critica' | 'alta' | 'media' | 'baja';

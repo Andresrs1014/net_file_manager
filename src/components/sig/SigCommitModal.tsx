@@ -1,19 +1,19 @@
 import { useState, useEffect } from 'react';
-import { Send, X, Loader, AlertTriangle, CheckCircle, Plus } from 'lucide-react';
+import { Send, X, Loader, AlertTriangle, CheckCircle, Plus, Layers } from 'lucide-react';
 import {
-  getSigAreas, getSigProcedimientos, createSigProcedimiento, submitSigCommit,
+  getSigAreas, getSigProcedimientos, createSigArea, createSigProcedimiento, submitSigCommit,
   type SigArea, type SigProcedimiento,
 } from '../../services/sigCommitService';
 import type { AnalysisPackage } from '../../types';
 
 interface Props {
-  pkg: AnalysisPackage;
-  textContent: string;
+  pkg?: AnalysisPackage;           // opcional — sin pkg = commit de inicialización
+  textContent?: string;
   onClose: () => void;
   onSuccess: (commitId: number) => void;
 }
 
-type Step = 'loading' | 'select' | 'create-proc' | 'commit' | 'done' | 'error';
+type Step = 'loading' | 'select' | 'create-area' | 'create-proc' | 'commit' | 'done' | 'error';
 
 // ── Animaciones inline — sin dependencia de Motion ni CSS global ──────────────
 const STYLES = `
@@ -34,6 +34,12 @@ function StepBody({ step, children }: { step: Step; children: React.ReactNode })
   );
 }
 
+// Paleta de colores predefinida para áreas nuevas
+const COLOR_PALETTE = [
+  '#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6',
+  '#06b6d4','#f97316','#84cc16','#ec4899','#6366f1',
+];
+
 export function SigCommitModal({ pkg, textContent, onClose, onSuccess }: Props) {
   const [step, setStep]               = useState<Step>('loading');
   const [areas, setAreas]             = useState<SigArea[]>([]);
@@ -41,7 +47,13 @@ export function SigCommitModal({ pkg, textContent, onClose, onSuccess }: Props) 
   const [selectedArea, setSelectedArea] = useState<SigArea | null>(null);
   const [selectedProc, setSelectedProc] = useState<SigProcedimiento | null>(null);
 
-  const [newCodigo,    setNewCodigo]    = useState(pkg.procedureCode);
+  // create-area state
+  const [newAreaNombre, setNewAreaNombre] = useState('');
+  const [newAreaDesc,   setNewAreaDesc]   = useState('');
+  const [newAreaColor,  setNewAreaColor]  = useState(COLOR_PALETTE[0]);
+  const [creatingArea,  setCreatingArea]  = useState(false);
+
+  const [newCodigo,    setNewCodigo]    = useState(pkg?.procedureCode ?? '');
   const [newTitulo,    setNewTitulo]    = useState('');
   const [newDesc,      setNewDesc]      = useState('');
   const [creatingProc, setCreatingProc] = useState(false);
@@ -63,25 +75,53 @@ export function SigCommitModal({ pkg, textContent, onClose, onSuccess }: Props) 
       }
       setAreas(areasRes.data);
 
-      const procsRes = await getSigProcedimientos();
-      if (procsRes.ok && procsRes.data) {
-        const match = procsRes.data.find(
-          (p) => p.codigo.toLowerCase() === pkg.procedureCode.toLowerCase(),
-        );
-        if (match) {
-          setSelectedProc(match);
-          const area = areasRes.data.find((a) => a.id === match.areaId) ?? null;
-          setSelectedArea(area);
-          setProcs(procsRes.data.filter((p) => p.areaId === match.areaId));
-          setMensaje(`Análisis de ${match.codigo} — rev. ${pkg.meta.version}`);
-          setStep('commit');
-          return;
+      if (pkg) {
+        const procsRes = await getSigProcedimientos();
+        if (procsRes.ok && procsRes.data) {
+          const match = procsRes.data.find(
+            (p) => p.codigo.toLowerCase() === pkg.procedureCode.toLowerCase(),
+          );
+          if (match) {
+            setSelectedProc(match);
+            const area = areasRes.data.find((a) => a.id === match.areaId) ?? null;
+            setSelectedArea(area);
+            setProcs(procsRes.data.filter((p) => p.areaId === match.areaId));
+            setMensaje(`Análisis de ${match.codigo} — rev. ${pkg.meta.version}`);
+            setStep('commit');
+            return;
+          }
+          setProcs(procsRes.data);
         }
-        setProcs(procsRes.data);
       }
       setStep('select');
     })();
   }, []);
+
+  const handleCreateArea = async () => {
+    if (!newAreaNombre.trim()) return;
+    setCreatingArea(true);
+    try {
+      const res = await createSigArea({
+        nombre: newAreaNombre.trim(),
+        descripcion: newAreaDesc.trim() || undefined,
+        color: newAreaColor,
+      });
+      if (!res.ok || !res.data) {
+        setErrorMsg(res.error ?? 'Error al crear el área');
+        setStep('error');
+        return;
+      }
+      const newArea = res.data;
+      setAreas((prev) => [...prev, newArea]);
+      setSelectedArea(newArea);
+      setProcs([]);
+      setNewAreaNombre('');
+      setNewAreaDesc('');
+      setStep('select');
+    } finally {
+      setCreatingArea(false);
+    }
+  };
 
   const handleAreaChange = async (areaId: number) => {
     const area = areas.find((a) => a.id === areaId) ?? null;
@@ -101,7 +141,7 @@ export function SigCommitModal({ pkg, textContent, onClose, onSuccess }: Props) 
     const proc = procs.find((p) => p.id === procId) ?? null;
     setSelectedProc(proc);
     if (proc) {
-      setMensaje(`Análisis de ${proc.codigo} — rev. ${pkg.meta.version}`);
+      setMensaje(`Análisis de ${proc.codigo}${pkg ? ` — rev. ${pkg.meta.version}` : ''}`);
       setStep('commit');
     }
   };
@@ -122,7 +162,7 @@ export function SigCommitModal({ pkg, textContent, onClose, onSuccess }: Props) 
         return;
       }
       setSelectedProc(res.data);
-      setMensaje(`Análisis de ${res.data.codigo} — rev. ${pkg.meta.version}`);
+      setMensaje(`Registro inicial de ${res.data.codigo}${pkg ? ` — rev. ${pkg.meta.version}` : ''}`);
       setStep('commit');
     } finally {
       setCreatingProc(false);
@@ -136,12 +176,12 @@ export function SigCommitModal({ pkg, textContent, onClose, onSuccess }: Props) 
     try {
       const res = await submitSigCommit({
         procedimientoId:   selectedProc.id,
-        contenidoOriginal: textContent,
-        contenidoAgente:   pkg.markdownNormalized,
-        flujogramaMmd:     pkg.flowchartMmd || undefined,
+        contenidoOriginal: textContent ?? '',
+        contenidoAgente:   pkg?.markdownNormalized ?? '',
+        flujogramaMmd:     pkg?.flowchartMmd || undefined,
         sinCambios,
         mensaje:           mensaje.trim(),
-        versionDoc:        pkg.meta.version,
+        versionDoc:        pkg?.meta.version,
       });
       if (!res.ok || !res.data) {
         setErrorMsg(res.error ?? 'Error al enviar el commit');
@@ -240,15 +280,27 @@ export function SigCommitModal({ pkg, textContent, onClose, onSuccess }: Props) 
               <StepBody step={step}>
                 <div className="space-y-4">
                   <p className="text-[11px] text-[#555] leading-relaxed">
-                    No se encontró{' '}
-                    <code className="text-[#a3a3a3] bg-[#222] px-1.5 py-0.5 rounded text-[10px] font-mono">
-                      {pkg.procedureCode}
-                    </code>{' '}
-                    en el SIG. Selecciona el destino.
+                    {pkg ? (
+                      <>No se encontró{' '}
+                        <code className="text-[#a3a3a3] bg-[#222] px-1.5 py-0.5 rounded text-[10px] font-mono">
+                          {pkg.procedureCode}
+                        </code>{' '}
+                        en el SIG.{' '}
+                      </>
+                    ) : 'Selecciona o crea el destino en el SIG.'}
+                    {pkg && 'Selecciona el destino.'}
                   </p>
 
                   <div>
-                    <label className="text-[10px] text-[#555] uppercase tracking-wider block mb-1.5">Área</label>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-[10px] text-[#555] uppercase tracking-wider">Área</label>
+                      <button
+                        onClick={() => setStep('create-area')}
+                        className="flex items-center gap-1 text-[10px] text-emerald-600 hover:text-emerald-400 transition-colors"
+                      >
+                        <Plus size={10} /> Nueva área
+                      </button>
+                    </div>
                     <select
                       value={selectedArea?.id ?? ''}
                       onChange={(e) => handleAreaChange(Number(e.target.value))}
@@ -277,6 +329,76 @@ export function SigCommitModal({ pkg, textContent, onClose, onSuccess }: Props) 
                       </select>
                     </div>
                   )}
+                </div>
+              </StepBody>
+            )}
+
+            {/* CREATE AREA */}
+            {step === 'create-area' && (
+              <StepBody step={step}>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="w-5 h-5 rounded bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
+                      <Layers size={11} className="text-blue-400" />
+                    </div>
+                    <span className="text-xs font-medium text-[#c5c5c5]">Nueva área SIG</span>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] text-[#555] uppercase tracking-wider block mb-1">Nombre</label>
+                    <input
+                      value={newAreaNombre}
+                      onChange={(e) => setNewAreaNombre(e.target.value)}
+                      placeholder="ej. Finanzas, Logística, HSEQ"
+                      autoFocus
+                      className="w-full bg-[#1e1e1e] border border-[#2a2a2a] hover:border-[#404040] rounded-lg px-3 py-1.5 text-xs text-[#e5e5e5] placeholder-[#3a3a3a] focus:outline-none focus:border-emerald-500/60 transition-colors"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] text-[#555] uppercase tracking-wider block mb-1">Descripción (opcional)</label>
+                    <input
+                      value={newAreaDesc}
+                      onChange={(e) => setNewAreaDesc(e.target.value)}
+                      placeholder="Descripción breve del área"
+                      className="w-full bg-[#1e1e1e] border border-[#2a2a2a] hover:border-[#404040] rounded-lg px-3 py-1.5 text-xs text-[#e5e5e5] placeholder-[#3a3a3a] focus:outline-none focus:border-emerald-500/60 transition-colors"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] text-[#555] uppercase tracking-wider block mb-2">Color</label>
+                    <div className="flex gap-2 flex-wrap">
+                      {COLOR_PALETTE.map((c) => (
+                        <button
+                          key={c}
+                          onClick={() => setNewAreaColor(c)}
+                          className="w-6 h-6 rounded-full transition-transform hover:scale-110"
+                          style={{
+                            backgroundColor: c,
+                            outline: newAreaColor === c ? `2px solid ${c}` : 'none',
+                            outlineOffset: 2,
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      onClick={() => setStep('select')}
+                      className="px-4 py-2 text-xs text-[#666] hover:text-[#a3a3a3] border border-[#2a2a2a] hover:border-[#444] rounded-lg transition-colors"
+                    >
+                      Atrás
+                    </button>
+                    <button
+                      onClick={handleCreateArea}
+                      disabled={creatingArea || !newAreaNombre.trim()}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-blue-700 hover:bg-blue-600 text-white text-xs font-medium rounded-lg disabled:opacity-40 transition-colors"
+                    >
+                      {creatingArea ? <Loader size={11} className="animate-spin" /> : <Plus size={11} />}
+                      {creatingArea ? 'Creando…' : 'Crear área'}
+                    </button>
+                  </div>
                 </div>
               </StepBody>
             )}

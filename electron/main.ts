@@ -822,6 +822,9 @@ interface ZymoAuthData {
   savedAt:      number;
 }
 
+// Session not persisted to disk when rememberMe=false
+let inMemoryAuth: ZymoAuthData | null = null;
+
 function authFilePath(): string {
   return path.join(app.getPath('userData'), 'zymo-auth.json');
 }
@@ -829,7 +832,7 @@ function authFilePath(): string {
 function readAuth(): ZymoAuthData | null {
   try {
     return JSON.parse(fs.readFileSync(authFilePath(), 'utf-8')) as ZymoAuthData;
-  } catch { return null; }
+  } catch { return inMemoryAuth; }
 }
 
 function writeAuth(data: ZymoAuthData): void {
@@ -837,10 +840,11 @@ function writeAuth(data: ZymoAuthData): void {
 }
 
 function clearAuth(): void {
+  inMemoryAuth = null;
   try { fs.unlinkSync(authFilePath()); } catch { /* ignore */ }
 }
 
-ipcMain.handle('auth:login', async (_, intranetUrl: string, email: string, password: string) => {
+ipcMain.handle('auth:login', async (_, intranetUrl: string, email: string, password: string, rememberMe: boolean = true) => {
   try {
     const base = intranetUrl.replace(/\/$/, '');
     const params = new URLSearchParams({ username: email, password });
@@ -862,7 +866,15 @@ ipcMain.handle('auth:login', async (_, intranetUrl: string, email: string, passw
     });
     const user = meRes.ok ? (await meRes.json() as Record<string, unknown>) : {};
 
-    writeAuth({ token: access_token, user, intranetUrl: base, savedAt: Date.now() });
+    const authData: ZymoAuthData = { token: access_token, user, intranetUrl: base, savedAt: Date.now() };
+    if (rememberMe) {
+      writeAuth(authData);
+      inMemoryAuth = null;
+    } else {
+      inMemoryAuth = authData;
+      // Clear any previously persisted session
+      try { fs.unlinkSync(authFilePath()); } catch { /* ignore */ }
+    }
     return { ok: true, user };
   } catch (e: unknown) {
     return { ok: false, error: e instanceof Error ? e.message : 'Error de red' };

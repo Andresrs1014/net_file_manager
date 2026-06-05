@@ -2,6 +2,39 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── AuthGate animations ──────────────────────────────────────── */
+@keyframes ag-enter {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes ag-exit {
+  from { opacity: 1; transform: scale(1); }
+  to   { opacity: 0; transform: scale(0.96); }
+}
+@keyframes ag-shake {
+  0%,100% { transform: translateX(0); }
+  20%      { transform: translateX(-8px); }
+  40%      { transform: translateX(8px); }
+  60%      { transform: translateX(-5px); }
+  80%      { transform: translateX(5px); }
+}
+@keyframes ag-shimmer {
+  from { transform: translateX(-100%) skewX(-12deg); }
+  to   { transform: translateX(200%) skewX(-12deg); }
+}
+@keyframes ag-pulse-ring {
+  0%   { transform: scale(0.9); opacity: 0.8; }
+  70%  { transform: scale(1.6); opacity: 0; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+@keyframes ag-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes ag-glow-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
 :root {
   --bg-primary: #1a1a1a;
   --bg-secondary: #262626;

@@ -29,8 +29,9 @@ export async function loginToIntranet(
   intranetUrl: string,
   email: string,
   password: string,
+  rememberMe: boolean = true,
 ): Promise<{ ok: boolean; error?: string; user?: ZymoUser }> {
-  return ipc().auth.login(intranetUrl, email, password);
+  return ipc().auth.login(intranetUrl, email, password, rememberMe);
 }
 
 export async function logoutFromIntranet(): Promise<void> {
