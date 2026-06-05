@@ -411,8 +411,10 @@ export function AnalyzerPanel({ onClose, filePath, defaultOutputRoot, onAnalysis
       if (intranetLoggedIn) {
         // Ruta primaria: intranet como proxy Claude (API key solo en el servidor)
         setProgress('Analizando via intranet…');
-        const res = await intranetPost<AnalysisPackage>('/api/netvault/analizar', payload);
-        r = { ok: res.ok, data: res.data ?? undefined, error: res.error };
+        const res = await intranetPost<{ ok: boolean; data: AnalysisPackage; error?: string }>('/api/netvault/analizar', payload);
+        // El backend devuelve { ok, data: pkg } — hay que desempaquetar el nivel extra
+        const body = res.data;
+        r = { ok: res.ok && !!body?.ok, data: body?.data ?? undefined, error: body?.error ?? res.error };
       } else {
         // Fallback offline: servidor local en 3847
         setProgress('Analizando via servidor local…');
