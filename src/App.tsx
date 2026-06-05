@@ -15,6 +15,7 @@ import { FlowchartPanel } from './components/flowchart/FlowchartPanel';
 import { AnalyzerPanel } from './components/analyzer/AnalyzerPanel';
 import { ExportPanel, createSampleExportData } from './components/export/ExportPanel';
 import { AuthGate, type AuthSession } from './components/auth/AuthGate';
+import { SigManagerPanel } from './components/sig/SigManagerPanel';
 import { ConversionQueue } from './components/queue/ConversionQueue';
 import { fileService, getConfig as getAppConfig, setConfig as setAppConfig } from './services/fileService';
 import { isSupported } from './services/documentService';
@@ -487,6 +488,10 @@ function App() {
           </div>
         </div>
       );
+    }
+
+    if (activeView === 'sig') {
+      return <SigManagerPanel />;
     }
 
     if (activeView === 'graph') {

@@ -1,13 +1,14 @@
-import { 
-  FolderOpen, 
-  Search, 
-  BarChart2, 
+import {
+  FolderOpen,
+  Search,
+  BarChart2,
   GitBranch,
   RefreshCw,
   Settings,
+  ShieldCheck,
 } from 'lucide-react';
 
-export type ActivityView = 'explorer' | 'search' | 'analysis' | 'graph' | 'sync';
+export type ActivityView = 'explorer' | 'search' | 'analysis' | 'graph' | 'sync' | 'sig';
 
 interface ActivityBarProps {
   activeView: ActivityView;
@@ -21,11 +22,12 @@ interface ActivityItem {
 }
 
 const ACTIVITIES: ActivityItem[] = [
-  { id: 'explorer',  icon: <FolderOpen size={22} />,  label: 'Explorador (E)' },
-  { id: 'search',    icon: <Search size={22} />,      label: 'Búsqueda (Ctrl+F)' },
-  { id: 'analysis',  icon: <BarChart2 size={22} />,   label: 'Análisis' },
-  { id: 'graph',     icon: <GitBranch size={22} />,   label: 'Grafo de conocimiento' },
-  { id: 'sync',      icon: <RefreshCw size={22} />,   label: 'Sincronización' },
+  { id: 'explorer',  icon: <FolderOpen size={22} />,    label: 'Explorador (E)' },
+  { id: 'search',    icon: <Search size={22} />,        label: 'Búsqueda (Ctrl+F)' },
+  { id: 'analysis',  icon: <BarChart2 size={22} />,     label: 'Análisis de procedimientos' },
+  { id: 'sig',       icon: <ShieldCheck size={22} />,   label: 'SIG — Gestión de áreas' },
+  { id: 'graph',     icon: <GitBranch size={22} />,     label: 'Grafo de conocimiento' },
+  { id: 'sync',      icon: <RefreshCw size={22} />,     label: 'Sincronización' },
 ];
 
 export function ActivityBar({ activeView, onViewChange }: ActivityBarProps) {
