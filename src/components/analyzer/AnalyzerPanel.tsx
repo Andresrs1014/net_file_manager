@@ -392,6 +392,7 @@ export function AnalyzerPanel({ onClose, filePath, defaultOutputRoot, onAnalysis
 
   // ─── Analysis ────────────────────────────────────────────────────────────────
   const handleAnalyze = async () => {
+    console.log('[NV] handleAnalyze — intranetLoggedIn:', intranetLoggedIn, '| session:', session);
     if (!textContent.trim()) { setAnalysisError('Carga o pega el contenido del procedimiento.'); return; }
     if (!procedureCode.trim()) { setAnalysisError('Ingresa el código del procedimiento.'); return; }
     if (!intranetLoggedIn && !session) { setAnalysisError('Inicia sesión en la intranet o en el servidor local.'); return; }
@@ -411,16 +412,18 @@ export function AnalyzerPanel({ onClose, filePath, defaultOutputRoot, onAnalysis
       let r: { ok: boolean; data?: AnalysisPackage; error?: string } | null = null;
 
       if (intranetLoggedIn) {
-        // Ruta primaria: intranet como proxy Claude (API key solo en el servidor)
         setProgress('Analizando via intranet…');
+        console.log('[NV] llamando intranetPost /api/netvault/analizar');
         const res = await intranetPost<{ ok: boolean; data: AnalysisPackage; error?: string }>('/api/netvault/analizar', payload);
-        // El backend devuelve { ok, data: pkg } — hay que desempaquetar el nivel extra
+        console.log('[NV] res.ok:', res.ok, '| res.status:', res.status, '| res.data keys:', res.data ? Object.keys(res.data) : null, '| res.error:', res.error);
         const body = res.data;
         r = { ok: res.ok && !!body?.ok, data: body?.data ?? undefined, error: body?.error ?? res.error };
+        console.log('[NV] r.ok:', r.ok, '| r.data present:', !!r.data, '| r.error:', r.error);
       } else {
-        // Fallback offline: servidor local en 3847
         setProgress('Analizando via servidor local…');
+        console.log('[NV] fallback servidor local 3847');
         r = await api.serverRunAnalysis?.(payload) ?? null;
+        console.log('[NV] serverRunAnalysis result:', r);
       }
 
       if (r?.ok && r.data) {
@@ -428,9 +431,11 @@ export function AnalyzerPanel({ onClose, filePath, defaultOutputRoot, onAnalysis
         onAnalysisComplete?.(r.data);
         setProgress('');
       } else {
+        console.warn('[NV] análisis falló — r:', r);
         setAnalysisError(r?.error ?? 'Error del servidor');
       }
     } catch (err: unknown) {
+      console.error('[NV] catch error:', err);
       setAnalysisError(err instanceof Error ? err.message : 'Error desconocido');
     } finally {
       setAnalyzing(false);
