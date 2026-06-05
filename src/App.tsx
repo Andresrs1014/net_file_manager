@@ -797,6 +797,7 @@ function App() {
           onClose={() => setShowAnalyzerPanel(false)}
           filePath={analyzerFilePath}
           defaultOutputRoot={currentPath}
+          alreadyLoggedIn={session !== null}
           onAnalysisComplete={(pkg) => setLastAnalysisPackage(pkg)}
           onOpenGraph={(pkg) => {
             setLastAnalysisPackage(pkg);

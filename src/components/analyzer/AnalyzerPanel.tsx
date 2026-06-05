@@ -201,9 +201,11 @@ interface Props {
   /** Notifica al app cuando hay un paquete listo (p. ej. para el grafo) */
   onAnalysisComplete?: (pkg: AnalysisPackage) => void;
   onOpenGraph?: (pkg: AnalysisPackage) => void;
+  /** Si se pasa desde App.tsx (ya validado por AuthGate), evita race condition async */
+  alreadyLoggedIn?: boolean;
 }
 
-export function AnalyzerPanel({ onClose, filePath, defaultOutputRoot, onAnalysisComplete, onOpenGraph }: Props) {
+export function AnalyzerPanel({ onClose, filePath, defaultOutputRoot, onAnalysisComplete, onOpenGraph, alreadyLoggedIn }: Props) {
   // Server connection state (fallback offline)
   const [serverUrl, setServerUrl] = useState('http://localhost:3847');
   const [serverHealth, setServerHealth] = useState<{
@@ -247,7 +249,7 @@ export function AnalyzerPanel({ onClose, filePath, defaultOutputRoot, onAnalysis
   const [loadingDoc, setLoadingDoc] = useState(false);
   const [existingFlowchart, setExistingFlowchart] = useState('');
   const [showSigModal, setShowSigModal] = useState(false);
-  const [intranetLoggedIn, setIntranetLoggedIn] = useState(false);
+  const [intranetLoggedIn, setIntranetLoggedIn] = useState(alreadyLoggedIn ?? false);
 
   const api = window.electronAPI;
 
