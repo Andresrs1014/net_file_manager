@@ -14,7 +14,7 @@ import {
   isAnalyzableFile,
 } from '../../services/procedureAnalysisService';
 import { getStoredSession, loginToIntranet, logoutFromIntranet } from '../../services/authService';
-import { intranetPost } from '../../services/intranetService';
+import { intranetPost, intranetGet } from '../../services/intranetService';
 import { getSigAreas, type SigArea } from '../../services/sigCommitService';
 import { SigCommitModal } from '../sig/SigCommitModal';
 
@@ -412,18 +412,31 @@ export function AnalyzerPanel({ onClose, filePath, defaultOutputRoot, onAnalysis
       let r: { ok: boolean; data?: AnalysisPackage; error?: string } | null = null;
 
       if (intranetLoggedIn) {
-        setProgress('Analizando via intranet…');
-        console.log('[NV] llamando intranetPost /api/netvault/analizar');
-        const res = await intranetPost<{ ok: boolean; data: AnalysisPackage; error?: string }>('/api/netvault/analizar', payload);
-        console.log('[NV] res.ok:', res.ok, '| res.status:', res.status, '| res.data keys:', res.data ? Object.keys(res.data) : null, '| res.error:', res.error);
-        const body = res.data;
-        r = { ok: res.ok && !!body?.ok, data: body?.data ?? undefined, error: body?.error ?? res.error };
-        console.log('[NV] r.ok:', r.ok, '| r.data present:', !!r.data, '| r.error:', r.error);
+        // 1. Iniciar job — retorna inmediatamente con job_id
+        setProgress('Iniciando análisis…');
+        const startRes = await intranetPost<{ ok: boolean; job_id?: string; error?: string }>('/api/netvault/analizar', payload);
+        if (!startRes.ok || !startRes.data?.job_id) {
+          r = { ok: false, error: startRes.data?.error ?? startRes.error ?? 'No se pudo iniciar el análisis' };
+        } else {
+          // 2. Polling hasta que el job termine (máx 5 min)
+          const jobId = startRes.data.job_id;
+          const deadline = Date.now() + 5 * 60 * 1000;
+          let dots = 0;
+          while (Date.now() < deadline) {
+            await new Promise(res => setTimeout(res, 3000));
+            dots = (dots + 1) % 4;
+            setProgress(`Analizando con Claude${'…'.repeat(dots + 1)}`);
+            const poll = await intranetGet<{ ok: boolean; status: string; data?: AnalysisPackage; error?: string }>(`/api/netvault/job/${jobId}`);
+            if (!poll.ok) { r = { ok: false, error: poll.error ?? 'Error consultando análisis' }; break; }
+            const job = poll.data;
+            if (job?.status === 'done' && job.data) { r = { ok: true, data: job.data }; break; }
+            if (job?.status === 'error') { r = { ok: false, error: job.error ?? 'Error en el análisis' }; break; }
+          }
+          if (!r) r = { ok: false, error: 'Timeout — el análisis tardó demasiado' };
+        }
       } else {
         setProgress('Analizando via servidor local…');
-        console.log('[NV] fallback servidor local 3847');
         r = await api.serverRunAnalysis?.(payload) ?? null;
-        console.log('[NV] serverRunAnalysis result:', r);
       }
 
       if (r?.ok && r.data) {
