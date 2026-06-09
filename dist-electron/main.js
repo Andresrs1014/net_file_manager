@@ -36,6 +36,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const electron_1 = require("electron");
 const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
+electron_1.Menu.setApplicationMenu(null);
 let mainWindow = null;
 function createWindow() {
     mainWindow = new electron_1.BrowserWindow({
@@ -48,8 +49,12 @@ function createWindow() {
             contextIsolation: true,
             nodeIntegration: false,
         },
-        backgroundColor: '#1a1a1a',
+        backgroundColor: '#07090f',
         show: false,
+        frame: false,
+        titleBarStyle: 'hidden',
+        autoHideMenuBar: false,
+        thickFrame: false,
     });
     // En desarrollo (npm run electron:dev) cargar Vite; en build empaquetado, dist/
     const isDev = !electron_1.app.isPackaged;
@@ -67,6 +72,8 @@ function createWindow() {
     mainWindow.on('closed', () => {
         mainWindow = null;
     });
+    mainWindow.on('maximize', () => mainWindow?.webContents.send('window:maximized', true));
+    mainWindow.on('unmaximize', () => mainWindow?.webContents.send('window:maximized', false));
 }
 // IPC Handlers - Sistema de archivos
 electron_1.ipcMain.handle('fs:readDir', async (_, dirPath) => {
@@ -254,6 +261,16 @@ electron_1.ipcMain.handle('dialog:openFile', async (_, filters) => {
         ],
     });
     return result.canceled ? null : result.filePaths[0];
+});
+electron_1.ipcMain.handle('dialog:openFiles', async (_, filters) => {
+    const result = await electron_1.dialog.showOpenDialog(mainWindow, {
+        properties: ['openFile', 'multiSelections'],
+        filters: filters || [
+            { name: 'Documentos', extensions: ['pdf', 'docx', 'doc', 'md', 'txt'] },
+            { name: 'Todos los archivos', extensions: ['*'] },
+        ],
+    });
+    return result.canceled ? [] : result.filePaths;
 });
 electron_1.ipcMain.handle('dialog:saveFile', async (_, defaultPath, filters) => {
     const result = await electron_1.dialog.showSaveDialog(mainWindow, {
@@ -718,6 +735,8 @@ electron_1.ipcMain.handle('dialog:openFolderForSave', async () => {
         return null;
     return result.filePaths[0];
 });
+// Session not persisted to disk when rememberMe=false
+let inMemoryAuth = null;
 function authFilePath() {
     return path.join(electron_1.app.getPath('userData'), 'zymo-auth.json');
 }
@@ -726,19 +745,20 @@ function readAuth() {
         return JSON.parse(fs.readFileSync(authFilePath(), 'utf-8'));
     }
     catch {
-        return null;
+        return inMemoryAuth;
     }
 }
 function writeAuth(data) {
     fs.writeFileSync(authFilePath(), JSON.stringify(data, null, 2), 'utf-8');
 }
 function clearAuth() {
+    inMemoryAuth = null;
     try {
         fs.unlinkSync(authFilePath());
     }
     catch { /* ignore */ }
 }
-electron_1.ipcMain.handle('auth:login', async (_, intranetUrl, email, password) => {
+electron_1.ipcMain.handle('auth:login', async (_, intranetUrl, email, password, rememberMe = true) => {
     try {
         const base = intranetUrl.replace(/\/$/, '');
         const params = new URLSearchParams({ username: email, password });
@@ -761,7 +781,19 @@ electron_1.ipcMain.handle('auth:login', async (_, intranetUrl, email, password) 
             headers: { Authorization: `Bearer ${access_token}` },
         });
         const user = meRes.ok ? await meRes.json() : {};
-        writeAuth({ token: access_token, user, intranetUrl: base, savedAt: Date.now() });
+        const authData = { token: access_token, user, intranetUrl: base, savedAt: Date.now() };
+        if (rememberMe) {
+            writeAuth(authData);
+            inMemoryAuth = null;
+        }
+        else {
+            inMemoryAuth = authData;
+            // Clear any previously persisted session
+            try {
+                fs.unlinkSync(authFilePath());
+            }
+            catch { /* ignore */ }
+        }
         return { ok: true, user };
     }
     catch (e) {
@@ -783,15 +815,15 @@ electron_1.ipcMain.handle('auth:ping', async () => {
     if (!d?.token)
         return { ok: false, loggedIn: false };
     try {
-        const res = await fetch(`${d.intranetUrl}/api/netvault/auth/ping`, {
+        const res = await fetch(`${d.intranetUrl}/auth/me`, {
             headers: { Authorization: `Bearer ${d.token}` },
         });
         if (!res.ok) {
             clearAuth();
             return { ok: false, loggedIn: false, error: 'Sesión expirada' };
         }
-        const data = await res.json();
-        return { ok: true, loggedIn: true, user: data.user ?? d.user };
+        const user = await res.json();
+        return { ok: true, loggedIn: true, user: user ?? d.user };
     }
     catch (e) {
         return { ok: false, loggedIn: false, error: e instanceof Error ? e.message : 'Sin conexión' };
@@ -898,6 +930,16 @@ electron_1.ipcMain.handle('queue:convertFiles', async (event, filePaths, area) =
         req.end();
     });
 });
+// ─── Window controls ─────────────────────────────────────────────────────────
+electron_1.ipcMain.on('window:minimize', () => mainWindow?.minimize());
+electron_1.ipcMain.on('window:maximize', () => {
+    if (mainWindow?.isMaximized())
+        mainWindow.unmaximize();
+    else
+        mainWindow?.maximize();
+});
+electron_1.ipcMain.on('window:close', () => mainWindow?.close());
+electron_1.ipcMain.handle('window:isMaximized', () => mainWindow?.isMaximized() ?? false);
 // ─────────────────────────────────────────────────────────────────────────────
 // App lifecycle
 electron_1.app.whenReady().then(() => {

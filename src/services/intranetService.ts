@@ -34,78 +34,20 @@ export async function intranetPost<T = unknown>(
   }) as Promise<FetchResult<T>>;
 }
 
-/** PATCH JSON a /endpoint. */
-export async function intranetPatch<T = unknown>(
-  endpoint: string,
-  body: unknown,
-): Promise<FetchResult<T>> {
-  return ipc().netvaultFetch(endpoint, {
-    method: 'PATCH',
-    body:   JSON.stringify(body),
-  }) as Promise<FetchResult<T>>;
-}
-
-/** DELETE a /endpoint. */
-export async function intranetDelete<T = unknown>(endpoint: string): Promise<FetchResult<T>> {
-  return ipc().netvaultFetch(endpoint, { method: 'DELETE' }) as Promise<FetchResult<T>>;
-}
-
-// ─── Tipos de respuesta de la API ─────────────────────────────────────────────
-
-export interface AnalyzePayload {
-  codigo:      string;
-  area:        string;
-  contenido:   string;
-  flowchart?:  string;
-}
-
-export interface AnalysisResult {
-  diagnostico:   string;
-  score:         number;
-  recomendaciones: string[];
-  flowchart_mmd?: string;
-}
-
-/** Envía un procedimiento al Claude Proxy de la intranet para análisis. */
-export async function analyzeWithClaude(payload: AnalyzePayload): Promise<FetchResult<AnalysisResult>> {
-  return intranetPost<AnalysisResult>('/api/netvault/claude/analizar', payload);
-}
-
 export interface ChatPayload {
   messages: { role: 'user' | 'assistant'; content: string }[];
   system?:  string;
+  modelo?:  'claude' | 'gemini';
 }
 
 export interface ChatResult {
   content: string;
   tokens:  number;
+  modelo:  string;
 }
 
-/** Chat general contra el proxy Claude de la intranet. */
+/** Chat general contra el proxy IA de la intranet (Claude o Gemini). */
 export async function chatViaIntranet(payload: ChatPayload): Promise<FetchResult<ChatResult>> {
-  return intranetPost<ChatResult>('/api/netvault/claude/chat', payload);
+  return intranetPost<ChatResult>('/api/netvault/chat', payload);
 }
 
-export interface SyncAreaEntry {
-  codigo:    string;
-  titulo:    string;
-  estado:    'pendiente' | 'analizado' | 'aprobado' | 'desactualizado';
-  version:   string;
-  hash_md5:  string;
-  updated_at: string;
-}
-
-/** Lista todos los documentos de un área sincronizados en la BD. */
-export async function getSyncArea(area: string): Promise<FetchResult<SyncAreaEntry[]>> {
-  return intranetGet<SyncAreaEntry[]>(`/api/netvault/sync/area/${encodeURIComponent(area)}`);
-}
-
-/** Estado de un documento específico. */
-export async function getSyncStatus(codigo: string): Promise<FetchResult<SyncAreaEntry>> {
-  return intranetGet<SyncAreaEntry>(`/api/netvault/sync/estado/${encodeURIComponent(codigo)}`);
-}
-
-/** Aprueba un procedimiento en la BD. */
-export async function approveProcedure(codigo: string): Promise<FetchResult<{ ok: boolean }>> {
-  return intranetPost(`/api/netvault/sync/aprobar/${encodeURIComponent(codigo)}`, {});
-}

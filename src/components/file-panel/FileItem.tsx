@@ -1,14 +1,14 @@
 import { useState, useRef, useEffect } from 'react';
 import { ContextMenu } from '../common/ContextMenu';
 import type { FileEntry, ClipboardContent } from '../../types';
-import { 
-  Folder, 
-  File, 
-  Copy, 
-  Scissors, 
-  Clipboard, 
-  Pencil, 
-  Trash2, 
+import {
+  Folder,
+  File,
+  Copy,
+  Scissors,
+  Clipboard,
+  Pencil,
+  Trash2,
   MapPin,
   FileText,
   Image,
@@ -16,6 +16,7 @@ import {
   Music,
   Archive,
   Code,
+  Star,
   type LucideIcon
 } from 'lucide-react';
 
@@ -32,6 +33,7 @@ interface FileItemProps {
   onDelete: () => void;
   onRename: () => void;
   onShowInFolder: () => void;
+  onAddFavorite?: () => void;
 }
 
 // Get appropriate icon based on file type
@@ -98,9 +100,10 @@ export function FileItem({
   onDelete,
   onRename,
   onShowInFolder,
+  onAddFavorite,
 }: FileItemProps) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
-  const [isHovered, setIsHovered] = useState(false);
+  const [_isHovered, setIsHovered] = useState(false);
   const itemRef = useRef<HTMLDivElement>(null);
 
   const IconComponent = getFileIcon(entry);
@@ -144,6 +147,11 @@ export function FileItem({
       icon: <Folder size={14} />,
       action: onDoubleClick,
     },
+    ...(onAddFavorite ? [{
+      label: 'Agregar a favoritos',
+      icon: <Star size={14} />,
+      action: onAddFavorite,
+    }] : []),
     { separator: true, label: '' } as any,
     {
       label: 'Copiar',
@@ -193,14 +201,13 @@ export function FileItem({
         tabIndex={0}
         aria-selected={isSelected}
         className={`
-          group flex items-center gap-3 px-3 py-2 cursor-pointer 
-          rounded-lg transition-all duration-200 ease-out
-          ${isSelected 
-            ? 'bg-[#3b82f6]/15 border border-[#3b82f6]/40 shadow-sm shadow-[#3b82f6]/10' 
-            : 'hover:bg-[#2d2d2d]'
+          group flex items-center gap-2 px-2 py-1 cursor-pointer
+          rounded transition-colors duration-150 ease-out
+          ${isSelected
+            ? 'bg-[var(--accent-dim)] border border-[var(--border-accent)]'
+            : 'border border-transparent hover:bg-[var(--bg-hover)]'
           }
-          ${isHovered && !isSelected ? 'bg-[#333]' : ''}
-          focus-visible:ring-2 focus-visible:ring-[#3b82f6] focus-visible:ring-offset-1 focus-visible:ring-offset-[#1a1a1a]
+          focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]
         `}
         onClick={onSelect}
         onDoubleClick={onDoubleClick}
@@ -209,55 +216,24 @@ export function FileItem({
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
-        {/* Icon with subtle animation */}
-        <span className={`
-          transition-all duration-200 ease-out
-          ${entry.isDirectory ? 'text-[#3b82f6]' : 'text-[#a3a3a3]'}
-          ${isHovered ? 'scale-110' : ''}
-        `}>
-          <IconComponent size={18} />
+        {/* Icon */}
+        <span className={`shrink-0 transition-colors duration-150 ${entry.isDirectory ? 'text-[var(--accent)]' : 'text-[var(--text-muted)]'}`}>
+          <IconComponent size={15} />
         </span>
 
         {/* File name */}
-        <span className={`
-          flex-1 truncate text-sm transition-colors duration-150
-          ${isSelected ? 'text-[#e5e5e5] font-medium' : 'text-[#d4d4d4]'}
-        `}>
+        <span className={`flex-1 truncate text-[13px] transition-colors duration-150 ${isSelected ? 'text-[var(--text-primary)] font-medium' : 'text-[var(--text-secondary)]'}`}>
           {entry.name}
         </span>
 
-        {/* Hover actions */}
-        <div className={`
-          flex items-center gap-1 opacity-0 group-hover:opacity-100 
-          transition-all duration-200 ease-out
-          ${isHovered ? 'translate-x-0' : '-translate-x-2'}
-        `}>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onCopy();
-            }}
-            className="p-1.5 rounded-md text-[#737373] hover:text-[#a3a3a3] hover:bg-[#404040]/50 transition-colors"
-            title="Copiar"
-          >
-            <Copy size={14} />
-          </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onCut();
-            }}
-            className="p-1.5 rounded-md text-[#737373] hover:text-[#a3a3a3] hover:bg-[#404040]/50 transition-colors"
-            title="Cortar"
-          >
-            <Scissors size={14} />
-          </button>
-        </div>
-
-        {/* Selection indicator */}
-        {isSelected && (
-          <div className="w-2 h-2 rounded-full bg-[#3b82f6] animate-pulse" />
-        )}
+        {/* Hover quick-copy action */}
+        <button
+          onClick={(e) => { e.stopPropagation(); onCopy(); }}
+          className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-raised)] transition-all duration-150"
+          title="Copiar"
+        >
+          <Copy size={12} />
+        </button>
       </div>
 
       {/* Context Menu */}

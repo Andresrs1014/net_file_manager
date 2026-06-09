@@ -23,6 +23,7 @@ const electronAPI = {
     // Diálogos nativos
     openFolderDialog: () => electron_1.ipcRenderer.invoke('dialog:openFolder'),
     openFileDialog: (filters) => electron_1.ipcRenderer.invoke('dialog:openFile', filters),
+    openFilesDialog: (filters) => electron_1.ipcRenderer.invoke('dialog:openFiles', filters),
     saveFileDialog: (defaultPath, filters) => electron_1.ipcRenderer.invoke('dialog:saveFile', defaultPath, filters),
     showMessage: (options) => electron_1.ipcRenderer.invoke('dialog:message', options),
     // Configuración
@@ -82,6 +83,14 @@ const electronAPI = {
         const handler = (_, data) => cb(data);
         electron_1.ipcRenderer.on('queue:progress', handler);
         return () => electron_1.ipcRenderer.removeListener('queue:progress', handler);
+    },
+    // ─── Window controls ──────────────────────────────────────────────────────
+    windowMinimize: () => electron_1.ipcRenderer.send('window:minimize'),
+    windowMaximize: () => electron_1.ipcRenderer.send('window:maximize'),
+    windowClose: () => electron_1.ipcRenderer.send('window:close'),
+    windowIsMaximized: () => electron_1.ipcRenderer.invoke('window:isMaximized'),
+    onWindowMaximized: (cb) => {
+        electron_1.ipcRenderer.on('window:maximized', (_, val) => cb(val));
     },
 };
 electron_1.contextBridge.exposeInMainWorld('electronAPI', electronAPI);

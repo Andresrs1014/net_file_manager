@@ -104,9 +104,11 @@ export function SearchBar({ onResultSelect, placeholder = 'Buscar archivos...', 
   };
 
   return (
-    <div className="relative flex-1 max-w-lg">
-      <div className="flex items-center bg-[#1a1a1a] border border-[#404040] rounded focus-within:border-[#3b82f6] transition-colors">
-        <span className="pl-3 text-[#737373]">🔍</span>
+    <div className="relative w-full">
+      <div className="flex items-center bg-[var(--bg-raised)] border border-[var(--border-subtle)] rounded focus-within:border-[var(--accent)] overflow-hidden">
+        <span className="pl-2.5 shrink-0 text-[var(--text-muted)]">
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        </span>
         <input
           ref={inputRef}
           type="text"
@@ -118,7 +120,7 @@ export function SearchBar({ onResultSelect, placeholder = 'Buscar archivos...', 
           onFocus={() => setShowResults(true)}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
-          className="flex-1 px-3 py-2 bg-transparent text-[#e5e5e5] outline-none text-sm placeholder-[#737373]"
+          className="flex-1 min-w-0 px-2 py-1.5 bg-transparent text-[var(--text-primary)] outline-none text-[13px] placeholder-[var(--text-muted)]"
         />
         
         {extensionFilter && (
@@ -184,11 +186,11 @@ export function SearchBar({ onResultSelect, placeholder = 'Buscar archivos...', 
       {showResults && query.trim() && (
         <div
           ref={resultsRef}
-          className="absolute top-full left-0 right-0 mt-1 bg-[#1a1a1a] border border-[#404040] rounded shadow-xl z-50 max-h-[300px] overflow-auto"
+          className="absolute top-full left-0 right-0 mt-1 bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded shadow-xl z-50 max-h-[280px] overflow-auto"
         >
           {results.length === 0 ? (
-            <div className="p-4 text-center text-[#737373]">
-              {isSearching ? 'Buscando...' : 'Sin resultados. Presiona "Indexar".'}
+            <div className="p-4 text-center text-[var(--text-muted)] text-xs">
+              {isSearching ? 'Buscando…' : 'Sin resultados.'}
             </div>
           ) : (
             <div className="py-1">
@@ -196,21 +198,25 @@ export function SearchBar({ onResultSelect, placeholder = 'Buscar archivos...', 
                 <button
                   key={result.entry.path}
                   onClick={() => handleResultClick(result)}
-                  className="w-full px-3 py-2 text-left hover:bg-[#333] flex items-center gap-2 transition-colors"
+                  className="w-full px-3 py-1.5 text-left hover:bg-[var(--bg-hover)] flex items-center gap-2 transition-colors duration-100"
                 >
-                  <span className="text-base">{result.entry.isDirectory ? '📁' : '📄'}</span>
+                  <span className="text-[var(--accent)] shrink-0">
+                    {result.entry.isDirectory
+                      ? <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                      : <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    }
+                  </span>
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm text-[#e5e5e5] truncate">{result.entry.name}</div>
-                    <div className="text-xs text-[#737373] truncate">{result.entry.path}</div>
+                    <div className="text-[12px] text-[var(--text-primary)] truncate">{result.entry.name}</div>
+                    <div className="text-[10px] text-[var(--text-muted)] truncate font-mono">{result.entry.path}</div>
                   </div>
                 </button>
               ))}
             </div>
           )}
-          
-          <div className="px-3 py-2 border-t border-[#333] text-xs text-[#737373] flex justify-between">
-            <span>{results.length} resultados · Ultra-fast 🔥</span>
-            <span>↑↓ Navegar · Enter</span>
+          <div className="px-3 py-1.5 border-t border-[var(--border-subtle)] text-[10px] text-[var(--text-muted)] flex justify-between">
+            <span>{results.length} resultados</span>
+            <span className="font-mono">↑↓ · ↵</span>
           </div>
         </div>
       )}

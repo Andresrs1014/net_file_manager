@@ -84,10 +84,10 @@ export function CommandPalette({ open, onClose, commands }: CommandPaletteProps)
       <div className="absolute inset-0 bg-black/60" onClick={onClose} />
 
       {/* Palette */}
-      <div className="relative w-[580px] max-h-[480px] bg-[#1a1a1a] border border-[#404040] rounded-xl shadow-2xl flex flex-col overflow-hidden">
+      <div className="relative w-[560px] max-h-[440px] bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-lg shadow-2xl flex flex-col overflow-hidden">
         {/* Search input */}
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-[#333]">
-          <Search size={16} className="text-[#737373] shrink-0" />
+        <div className="flex items-center gap-3 px-4 py-2.5 border-b border-[var(--border-subtle)]">
+          <Search size={14} className="text-[var(--text-muted)] shrink-0" />
           <input
             ref={inputRef}
             type="text"
@@ -95,21 +95,21 @@ export function CommandPalette({ open, onClose, commands }: CommandPaletteProps)
             onChange={e => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Buscar comandos…"
-            className="flex-1 bg-transparent text-[#e5e5e5] outline-none text-sm placeholder-[#505050]"
+            className="flex-1 bg-transparent text-[var(--text-primary)] outline-none text-sm placeholder-[var(--text-muted)]"
           />
-          <kbd className="text-[10px] text-[#505050] border border-[#404040] rounded px-1.5 py-0.5">Esc</kbd>
+          <kbd className="text-[10px] text-[var(--text-muted)] border border-[var(--border-subtle)] rounded px-1.5 py-0.5 font-mono">Esc</kbd>
         </div>
 
         {/* Results */}
         <div ref={listRef} className="flex-1 overflow-auto py-1">
           {filtered.length === 0 ? (
-            <div className="px-4 py-8 text-center text-[#505050] text-sm">
+            <div className="px-4 py-8 text-center text-[var(--text-muted)] text-sm">
               Sin resultados para "{query}"
             </div>
           ) : (
             Array.from(groups.entries()).map(([group, cmds]) => (
               <div key={group}>
-                <div className="px-4 py-1 text-[10px] font-semibold text-[#505050] uppercase tracking-wider">
+                <div className="px-4 py-1.5 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest">
                   {group}
                 </div>
                 {cmds.map(cmd => {
@@ -121,21 +121,21 @@ export function CommandPalette({ open, onClose, commands }: CommandPaletteProps)
                       onClick={() => { cmd.action(); onClose(); }}
                       onMouseEnter={() => setSelectedIdx(idx)}
                       className={`
-                        w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors
-                        ${isSelected ? 'bg-[#2a2a2a]' : 'hover:bg-[#222]'}
+                        w-full flex items-center gap-3 px-4 py-2 text-left transition-colors duration-100
+                        ${isSelected ? 'bg-[var(--bg-raised)]' : 'hover:bg-[var(--bg-hover)]'}
                       `}
                     >
-                      <span className={`shrink-0 ${isSelected ? 'text-[#3b82f6]' : 'text-[#606060]'}`}>
-                        {cmd.icon ?? <Zap size={16} />}
+                      <span className={`shrink-0 ${isSelected ? 'text-[var(--accent)]' : 'text-[var(--text-muted)]'}`}>
+                        {cmd.icon ?? <Zap size={14} />}
                       </span>
                       <div className="flex-1 min-w-0">
-                        <div className="text-sm text-[#e5e5e5]">{cmd.label}</div>
+                        <div className="text-[13px] text-[var(--text-primary)]">{cmd.label}</div>
                         {cmd.description && (
-                          <div className="text-xs text-[#606060] truncate">{cmd.description}</div>
+                          <div className="text-xs text-[var(--text-muted)] truncate">{cmd.description}</div>
                         )}
                       </div>
                       {cmd.shortcut && (
-                        <kbd className="text-[10px] text-[#505050] border border-[#333] rounded px-1.5 py-0.5 shrink-0">
+                        <kbd className="text-[10px] text-[var(--text-muted)] border border-[var(--border-subtle)] rounded px-1.5 py-0.5 shrink-0 font-mono">
                           {cmd.shortcut}
                         </kbd>
                       )}
@@ -148,12 +148,12 @@ export function CommandPalette({ open, onClose, commands }: CommandPaletteProps)
         </div>
 
         {/* Footer */}
-        <div className="px-4 py-2 border-t border-[#333] flex items-center gap-3 text-[10px] text-[#505050]">
-          <span>↑↓ navegar</span>
+        <div className="px-4 py-1.5 border-t border-[var(--border-subtle)] flex items-center gap-3 text-[10px] text-[var(--text-muted)]">
+          <span className="font-mono">↑↓</span><span>navegar</span>
           <span>·</span>
-          <span>Enter ejecutar</span>
+          <span className="font-mono">↵</span><span>ejecutar</span>
           <span>·</span>
-          <span>Esc cerrar</span>
+          <span className="font-mono">Esc</span><span>cerrar</span>
         </div>
       </div>
     </div>

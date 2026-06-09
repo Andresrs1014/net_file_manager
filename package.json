@@ -21,7 +21,6 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.52.0",
     "d3": "^7.9.0",
     "file-saver": "^2.0.5",
     "fuse.js": "^7.4.1",
@@ -32,9 +31,7 @@
     "mermaid": "^11.4.0",
     "pdfjs-dist": "^4.7.76",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "sql.js": "^1.11.0",
-    "uuid": "^10.0.0"
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@types/d3": "^7.4.3",
@@ -43,7 +40,6 @@
     "@types/node": "^22.7.7",
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.1",
-    "@types/uuid": "^10.0.0",
     "@vitejs/plugin-react": "^4.3.2",
     "autoprefixer": "^10.4.20",
     "concurrently": "^9.0.1",

@@ -1,6 +1,8 @@
-import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, Menu } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
+
+Menu.setApplicationMenu(null);
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -15,8 +17,12 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
     },
-    backgroundColor: '#1a1a1a',
+    backgroundColor: '#07090f',
     show: false,
+    frame: false,
+    titleBarStyle: 'hidden',
+    autoHideMenuBar: false,
+    thickFrame: false,
   });
 
   // En desarrollo (npm run electron:dev) cargar Vite; en build empaquetado, dist/
@@ -36,6 +42,9 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+
+  mainWindow.on('maximize', () => mainWindow?.webContents.send('window:maximized', true));
+  mainWindow.on('unmaximize', () => mainWindow?.webContents.send('window:maximized', false));
 }
 
 // IPC Handlers - Sistema de archivos
@@ -359,27 +368,6 @@ ipcMain.handle('terminal:execute', (event, cmd: string, cwd: string) => {
       resolve(fullOutput);
     });
   });
-});
-
-// Ollama chat handler (bypasses CORS since main process has no restrictions)
-ipcMain.handle('ollama:chat', async (_, model: string, messages: any[]) => {
-  try {
-    const response = await fetch('http://localhost:11434/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model, messages, stream: false }),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({})) as { error?: string };
-      throw new Error(errorData.error || `HTTP ${response.status}`);
-    }
-
-    const data = await response.json() as { message?: { content?: string } };
-    return { success: true, content: data.message?.content || '' };
-  } catch (error: any) {
-    return { success: false, error: error.message };
-  }
 });
 
 // IPC Handler - Detect installed code editors
@@ -1006,6 +994,15 @@ ipcMain.handle('queue:convertFiles', async (event, filePaths: string[], area: st
     req.end();
   });
 });
+
+// ─── Window controls ─────────────────────────────────────────────────────────
+ipcMain.on('window:minimize', () => mainWindow?.minimize());
+ipcMain.on('window:maximize', () => {
+  if (mainWindow?.isMaximized()) mainWindow.unmaximize();
+  else mainWindow?.maximize();
+});
+ipcMain.on('window:close', () => mainWindow?.close());
+ipcMain.handle('window:isMaximized', () => mainWindow?.isMaximized() ?? false);
 
 // ─────────────────────────────────────────────────────────────────────────────
 

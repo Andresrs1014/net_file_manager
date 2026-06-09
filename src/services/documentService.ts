@@ -5,7 +5,7 @@ import yaml from 'js-yaml';
 export interface DocumentMetadata {
   name: string;
   originalPath: string;
-  type: 'pdf' | 'docx' | 'md';
+  type: 'pdf' | 'docx' | 'md' | 'image';
   pages?: number;
   processedAt: string;
   hash?: string;
@@ -18,8 +18,8 @@ export interface ConversionResult {
   error?: string;
 }
 
-// Set up PDF.js worker from CDN
-pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+// Set up PDF.js worker from local bundle (Vite resolves this at build time)
+pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).href;
 
 /**
  * Convert PDF to Markdown using pdfjs-dist
@@ -283,42 +283,27 @@ async function generateHash(content: string): Promise<string> {
 }
 
 /**
- * Extract plain text from markdown (remove frontmatter and formatting)
- */
-export function extractPlainText(markdown: string): string {
-  // Remove frontmatter
-  let text = markdown.replace(/^---[\s\S]*?---\n/, '');
-  
-  // Remove markdown formatting
-  text = text
-    .replace(/#{1,6}\s/g, '')  // Headers
-    .replace(/\*\*([^*]+)\*\*/g, '$1')  // Bold
-    .replace(/\*([^*]+)\*/g, '$1')  // Italic
-    .replace(/`([^`]+)`/g, '$1')  // Inline code
-    .replace(/```[\s\S]*?```/g, '')  // Code blocks
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')  // Links
-    .replace(/!\[([^\]]*)\]\([^)]+\)/g, '')  // Images
-    .replace(/^\s*[-*+]\s/gm, '')  // List items
-    .replace(/^\s*\d+\.\s/gm, '')  // Numbered lists
-    .replace(/\n{3,}/g, '\n\n');  // Multiple newlines
-  
-  return text.trim();
-}
-
-/**
  * Get supported file extensions
  */
-export const SUPPORTED_EXTENSIONS = ['.pdf', '.docx', '.doc', '.md', '.markdown'];
+export const SUPPORTED_EXTENSIONS = [
+  '.pdf', '.docx', '.doc', '.md', '.markdown',
+  '.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg'
+];
 
 export function isSupported(filePath: string): boolean {
   const ext = filePath.toLowerCase();
   return SUPPORTED_EXTENSIONS.some(e => ext.endsWith(e));
 }
 
-export function getFileType(filePath: string): 'pdf' | 'docx' | 'md' | 'unknown' {
+export function getFileType(filePath: string): 'pdf' | 'docx' | 'md' | 'image' | 'unknown' {
   const ext = filePath.toLowerCase();
   if (ext.endsWith('.pdf')) return 'pdf';
   if (ext.endsWith('.docx') || ext.endsWith('.doc')) return 'docx';
   if (ext.endsWith('.md') || ext.endsWith('.markdown')) return 'md';
+  if (
+    ext.endsWith('.jpg') || ext.endsWith('.jpeg') ||
+    ext.endsWith('.png') || ext.endsWith('.gif') ||
+    ext.endsWith('.webp') || ext.endsWith('.svg')
+  ) return 'image';
   return 'unknown';
 }

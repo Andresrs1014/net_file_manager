@@ -1,4 +1,4 @@
-import type { AnalysisPackage, ZymoCorpusEntry } from '../types';
+import type { ZymoCorpusEntry } from '../types';
 import type { GraphData, GraphEdge, GraphNode } from '../components/graph/KnowledgeGraph';
 
 const NODE_ID = (kind: string, name: string) => `${kind}:${name.toLowerCase().replace(/\s+/g, '_')}`;
@@ -271,36 +271,6 @@ export function fromZymoCorpus(
   return { nodes: [...nodes.values()], edges };
 }
 
-export function fromAnalysisPackage(pkg: AnalysisPackage): GraphData {
-  const base = fromZymoCorpus(pkg.zymoCorpus, pkg.procedureCode);
-  const nodes = new Map(base.nodes.map((n) => [n.id, n]));
-  const edges = [...base.edges];
-  const edgeKeys = new Set(edges.map((e) => edgeKey(e)));
-
-  for (const f of pkg.findings) {
-    const cid = NODE_ID('concept', f.category);
-    if (!nodes.has(cid)) {
-      nodes.set(cid, { id: cid, label: f.category, type: 'concept', properties: { severity: f.severity } });
-    }
-    const procId = NODE_ID('process', pkg.procedureCode);
-    addEdge(edges, edgeKeys, procId, cid, 'evalúa', 'relates');
-  }
-
-  for (const p of pkg.proposals) {
-    const pid = NODE_ID('concept', p.title);
-    if (!nodes.has(pid)) {
-      nodes.set(pid, {
-        id: pid,
-        label: p.title,
-        type: 'concept',
-        properties: { proposalType: p.type, priority: p.priority },
-      });
-    }
-    addEdge(edges, edgeKeys, NODE_ID('process', pkg.procedureCode), pid, 'propone', 'uses');
-  }
-
-  return { nodes: [...nodes.values()], edges };
-}
 
 export function parseCorpusJsonl(text: string): ZymoCorpusEntry[] {
   const entries: ZymoCorpusEntry[] = [];
@@ -338,76 +308,6 @@ export function mergeGraphData(...graphs: GraphData[]): GraphData {
   return { nodes: [...nodes.values()], edges };
 }
 
-export async function loadGraphFromDirectory(rootPath: string): Promise<GraphData> {
-  const parts: GraphData[] = [];
-  const areas = await safeReadDir(rootPath);
-
-  for (const areaEntry of areas) {
-    if (!areaEntry.isDirectory) continue;
-    const areaPath = joinPath(rootPath, areaEntry.name);
-    const codes = await safeReadDir(areaPath);
-
-    for (const codeEntry of codes) {
-      if (!codeEntry.isDirectory) continue;
-      const codePath = joinPath(areaPath, codeEntry.name);
-      const corpusPath = joinPath(codePath, 'corpus_zymo.jsonl');
-      if (!(await window.electronAPI.fileExists(corpusPath))) continue;
-
-      const raw = await window.electronAPI.readFile(corpusPath);
-      const text = typeof raw === 'string' ? raw : new TextDecoder().decode(raw as Uint8Array);
-      const entries = parseCorpusJsonl(text);
-      if (entries.length) parts.push(fromZymoCorpus(entries, codeEntry.name));
-    }
-  }
-
-  if (parts.length === 0) return { nodes: [], edges: [] };
-  return mergeGraphData(...parts);
-}
-
-export async function loadGraphFromCodeImports(
-  rootPath: string,
-  maxFiles = 80,
-): Promise<GraphData> {
-  const codeFiles = await collectCodeFiles(rootPath, maxFiles);
-  const nodes = new Map<string, GraphNode>();
-  const edges: GraphEdge[] = [];
-  const edgeKeys = new Set<string>();
-
-  for (const filePath of codeFiles) {
-    const rel = relativePath(rootPath, filePath);
-    const nid = NODE_ID('file', rel);
-    nodes.set(nid, { id: nid, label: rel.split(/[/\\]/).pop() ?? rel, type: 'document', properties: { path: filePath } });
-
-    let content: string;
-    try {
-      const raw = await window.electronAPI.readFile(filePath);
-      content = typeof raw === 'string' ? raw : new TextDecoder().decode(raw as Uint8Array);
-    } catch {
-      continue;
-    }
-
-    const importRe = /(?:import\s+.*?from\s+['"]([^'"]+)['"]|require\s*\(\s*['"]([^'"]+)['"]\s*\))/g;
-    let m: RegExpExecArray | null;
-    while ((m = importRe.exec(content)) !== null) {
-      const dep = m[1] || m[2];
-      if (!dep || dep.startsWith('.')) {
-        const depId = NODE_ID('file', `${rel} -> ${dep}`);
-        if (!nodes.has(depId)) {
-          nodes.set(depId, { id: depId, label: dep, type: 'concept', properties: { local: 'true' } });
-        }
-        addEdge(edges, edgeKeys, nid, depId, 'importa', 'references');
-      } else {
-        const depId = NODE_ID('concept', dep);
-        if (!nodes.has(depId)) {
-          nodes.set(depId, { id: depId, label: dep, type: 'concept' });
-        }
-        addEdge(edges, edgeKeys, nid, depId, 'importa', 'uses');
-      }
-    }
-  }
-
-  return { nodes: [...nodes.values()], edges };
-}
 
 function addEdge(
   edges: GraphEdge[],
@@ -450,30 +350,6 @@ function relativePath(root: string, full: string): string {
   return n.toLowerCase().startsWith(r.toLowerCase())
     ? n.slice(r.length).replace(/^\//, '')
     : full;
-}
-
-const CODE_EXT = new Set(['.ts', '.tsx', '.js', '.jsx', '.py', '.go', '.rs']);
-
-async function collectCodeFiles(dir: string, max: number, depth = 0): Promise<string[]> {
-  if (depth > 4 || max <= 0) return [];
-  const out: string[] = [];
-  const entries = await safeReadDir(dir);
-  for (const e of entries) {
-    if (out.length >= max) break;
-    const full = joinPath(dir, e.name);
-    if (e.isDirectory) {
-      if (SKIP_DIRS.has(e.name)) continue;
-      out.push(...await collectCodeFiles(full, max - out.length, depth + 1));
-    } else if (CODE_EXT.has(extname(e.name))) {
-      out.push(full);
-    }
-  }
-  return out;
-}
-
-function extname(name: string): string {
-  const i = name.lastIndexOf('.');
-  return i >= 0 ? name.slice(i).toLowerCase() : '';
 }
 
 // ─── Grafo LightRAG (intranet ZYMO) ──────────────────────────────────────────
@@ -555,20 +431,3 @@ export async function loadLightRagGraph(
   };
 }
 
-export function getSampleGraphData(): GraphData {
-  return fromZymoCorpus(
-    [
-      {
-        source: 'TC-EJEMPLO-001',
-        chunk: 'El coordinador T&C valida solicitudes de transporte en 2 horas hábiles.',
-        entities: ['Coordinador T&C', 'Solicitante', 'Supervisor T&C', 'Sistema de flota'],
-        relations: [
-          { from: 'Solicitante', to: 'Coordinador T&C', type: 'envía_solicitud' },
-          { from: 'Coordinador T&C', to: 'Supervisor T&C', type: 'escala' },
-          { from: 'Coordinador T&C', to: 'Sistema de flota', type: 'asigna' },
-        ],
-      },
-    ],
-    'TC-EJEMPLO-001',
-  );
-}

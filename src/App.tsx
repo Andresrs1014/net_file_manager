@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { TitleBar } from './components/layout/TitleBar';
 import { Sidebar } from './components/layout/Sidebar';
 import { ActivityBar, type ActivityView } from './components/layout/ActivityBar';
 import { StatusBar } from './components/layout/StatusBar';
@@ -22,7 +23,7 @@ import { isSupported } from './services/documentService';
 import { searchService } from './services/searchService';
 import { logoutFromIntranet } from './services/authService';
 import type { AnalysisPackage, ClipboardContent } from './types';
-import { X, FolderOpen, Search, BarChart2, GitBranch, RefreshCw, Terminal as TerminalIcon, Bot, ChevronLeft, Wifi, FileUp } from 'lucide-react';
+import { X, FolderOpen, Search, BarChart2, GitBranch, RefreshCw, Terminal as TerminalIcon, Bot, ChevronLeft, Wifi, FileUp, Columns2, Sun, Moon } from 'lucide-react';
 
 interface OpenTab {
   id: string;
@@ -59,6 +60,13 @@ function App() {
   const [session,        setSession]        = useState<AuthSession | null>(null);
   const [showQueue,      setShowQueue]      = useState(false);
   const [conversionArea, setConversionArea] = useState('');
+
+  // ─── Layout & Theme ───────────────────────────────────────────────────────
+  const [showRightPanel, setShowRightPanel] = useState(false);
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const [recentPaths, setRecentPaths] = useState<string[]>([]);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(208); // default w-52 = 208px
 
   // Workbench state
   const [activeView, setActiveView] = useState<ActivityView>('explorer');
@@ -174,6 +182,27 @@ function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  // Apply theme to document root
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
+
+  const pushRecentPath = useCallback((path: string) => {
+    setRecentPaths(prev => {
+      const filtered = prev.filter(p => p !== path);
+      return [path, ...filtered].slice(0, 10);
+    });
+  }, []);
+
+  const handleAddFavorite = useCallback((path: string) => {
+    setFavorites(prev => {
+      if (prev.includes(path)) return prev;
+      const next = [...prev, path];
+      fileService.saveConfig({ favorites: next });
+      return next;
+    });
+  }, []);
+
   const loadConfig = async () => {
     try {
       const config = await getAppConfig();
@@ -237,12 +266,14 @@ function App() {
     setLeftPath(path);
     setLastExplorerPath(path);
     savePath('left', path);
+    pushRecentPath(path);
   };
 
   const handleRightPathChange = (path: string) => {
     setRightPath(path);
     setLastExplorerPath(path);
     savePath('right', path);
+    pushRecentPath(path);
   };
 
   const handleTerminalCwdChange = (newCwd: string) => {
@@ -420,6 +451,7 @@ function App() {
         <Sidebar
           quickAccess={quickAccess}
           favorites={favorites}
+          recentPaths={recentPaths}
           onNavigate={handleSidebarNavigate}
           onToggle={() => setSidebarOpen(false)}
           isOpen={true}
@@ -441,16 +473,20 @@ function App() {
       );
     }
 
+    const panelHeader = (title: string) => (
+      <div className="h-8 flex items-center justify-between px-3 border-b border-[var(--border-subtle)] shrink-0">
+        <span className="text-[11px] font-semibold text-[var(--text-muted)] uppercase tracking-widest">{title}</span>
+        <button onClick={() => setSidebarOpen(false)} className="text-[var(--text-muted)] hover:text-[var(--text-primary)] p-0.5 rounded transition-colors duration-150">
+          <ChevronLeft size={13} />
+        </button>
+      </div>
+    );
+
     if (activeView === 'search') {
       return (
-        <div className="w-56 flex flex-col bg-[#1a1a1a] border-r border-[#2a2a2a]">
-          <div className="h-9 flex items-center justify-between px-3 border-b border-[#2a2a2a]">
-            <span className="text-xs font-semibold text-[#a3a3a3] uppercase tracking-wide">Búsqueda</span>
-            <button onClick={() => setSidebarOpen(false)} className="text-[#505050] hover:text-[#a3a3a3] p-0.5 rounded">
-              <ChevronLeft size={14} />
-            </button>
-          </div>
-          <div className="p-2">
+        <div className="w-full flex flex-col bg-[var(--bg-surface)] border-r border-[var(--border-subtle)]">
+          {panelHeader('Búsqueda')}
+          <div className="p-2 overflow-hidden">
             <SearchBar
               currentPath={currentPath}
               placeholder="Buscar archivos…"
@@ -463,28 +499,17 @@ function App() {
 
     if (activeView === 'analysis') {
       return (
-        <div className="w-56 flex flex-col bg-[#1a1a1a] border-r border-[#2a2a2a]">
-          <div className="h-9 flex items-center justify-between px-3 border-b border-[#2a2a2a]">
-            <span className="text-xs font-semibold text-[#a3a3a3] uppercase tracking-wide">Análisis</span>
-            <button onClick={() => setSidebarOpen(false)} className="text-[#505050] hover:text-[#a3a3a3] p-0.5 rounded">
-              <ChevronLeft size={14} />
-            </button>
-          </div>
-          <div className="p-3 flex flex-col gap-2 text-xs text-[#737373]">
-            <p>Analiza procedimientos con la rúbrica NetVault y guarda el formato único en disco.</p>
+        <div className="w-full flex flex-col bg-[var(--bg-surface)] border-r border-[var(--border-subtle)]">
+          {panelHeader('Análisis')}
+          <div className="p-3 flex flex-col gap-3">
+            <p className="text-[12px] text-[var(--text-muted)] leading-relaxed">Analiza procedimientos con la rúbrica NetVault.</p>
             <button
               type="button"
-              onClick={() => {
-                setAnalyzerFilePath(undefined);
-                setShowAnalyzerPanel(true);
-              }}
-              className="w-full py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-medium"
+              onClick={() => { setAnalyzerFilePath(undefined); setShowAnalyzerPanel(true); }}
+              className="w-full py-1.5 bg-[var(--accent)] hover:bg-[var(--accent-dim)] text-white text-xs rounded font-medium transition-colors duration-150"
             >
               Abrir analizador
             </button>
-            <p className="text-[10px] text-[#505050]">
-              Servidor: localhost:3847 · demo admin / admin123
-            </p>
           </div>
         </div>
       );
@@ -496,30 +521,20 @@ function App() {
 
     if (activeView === 'graph') {
       return (
-        <div className="w-56 flex flex-col bg-[#1a1a1a] border-r border-[#2a2a2a]">
-          <div className="h-9 flex items-center justify-between px-3 border-b border-[#2a2a2a]">
-            <span className="text-xs font-semibold text-[#a3a3a3] uppercase tracking-wide">Grafo</span>
-            <button onClick={() => setSidebarOpen(false)} className="text-[#505050] hover:text-[#a3a3a3] p-0.5 rounded">
-              <ChevronLeft size={14} />
-            </button>
-          </div>
-          <div className="p-3 flex flex-col gap-2 text-xs text-[#737373]">
-            <p>Dos modos en el panel central: <strong className="text-[#a3a3a3] font-normal">Vault .md</strong> (Obsidian) y <strong className="text-[#a3a3a3] font-normal">LightRAG</strong> (intranet).</p>
-            <p className="text-[10px] text-[#505050] break-all" title={vaultPath}>
-              Carpeta vault: {vaultPath}
-            </p>
-            <p className="text-[10px] text-[#3b82f6]">Pestañas «Vault .md» y «LightRAG» arriba del grafo.</p>
+        <div className="w-full flex flex-col bg-[var(--bg-surface)] border-r border-[var(--border-subtle)]">
+          {panelHeader('Grafo')}
+          <div className="p-3 flex flex-col gap-3">
+            <p className="text-[12px] text-[var(--text-muted)] leading-relaxed">Vault .md (Obsidian) y LightRAG (intranet).</p>
+            <p className="text-[11px] text-[var(--text-muted)] break-all font-mono" title={vaultPath}>{vaultPath.split(/[\\/]/).pop()}</p>
             <button
               type="button"
               onClick={() => setShowGraphPanel(true)}
-              className="w-full py-2 bg-[#262626] hover:bg-[#333] text-[#e5e5e5] rounded-lg font-medium border border-[#404040]"
+              className="w-full py-1.5 bg-[var(--bg-raised)] hover:bg-[var(--bg-hover)] text-[var(--text-primary)] text-xs rounded font-medium border border-[var(--border-subtle)] transition-colors duration-150"
             >
-              Abrir en ventana grande
+              Abrir en ventana
             </button>
             {lastAnalysisPackage && (
-              <p className="text-[10px] text-green-500/80">
-                Análisis listo: {lastAnalysisPackage.procedureCode}
-              </p>
+              <p className="text-[11px] text-[var(--success)]">Análisis: {lastAnalysisPackage.procedureCode}</p>
             )}
           </div>
         </div>
@@ -528,15 +543,10 @@ function App() {
 
     if (activeView === 'sync') {
       return (
-        <div className="w-56 flex flex-col bg-[#1a1a1a] border-r border-[#2a2a2a]">
-          <div className="h-9 flex items-center justify-between px-3 border-b border-[#2a2a2a]">
-            <span className="text-xs font-semibold text-[#a3a3a3] uppercase tracking-wide">Sincronización</span>
-            <button onClick={() => setSidebarOpen(false)} className="text-[#505050] hover:text-[#a3a3a3] p-0.5 rounded">
-              <ChevronLeft size={14} />
-            </button>
-          </div>
-          <div className="flex-1 flex flex-col items-center justify-center p-4 text-center">
-            <p className="text-xs text-[#383838]">Disponible en versiones próximas</p>
+        <div className="w-full flex flex-col bg-[var(--bg-surface)] border-r border-[var(--border-subtle)]">
+          {panelHeader('Sincronización')}
+          <div className="flex-1 flex items-center justify-center p-4">
+            <p className="text-[12px] text-[var(--text-muted)] text-center">Próximamente</p>
           </div>
         </div>
       );
@@ -546,7 +556,8 @@ function App() {
   };
 
   return (
-    <div className="h-screen flex flex-col bg-[#111111] text-[#e5e5e5] overflow-hidden">
+    <div className="h-screen flex flex-col bg-[var(--bg-base)] text-[var(--text-primary)] overflow-hidden ring-1 ring-inset ring-[var(--border-subtle)]">
+      <TitleBar />
       {/* ── Workspace ── */}
       <div className="flex flex-1 min-h-0">
 
@@ -560,21 +571,47 @@ function App() {
           }
         }} />
 
-        {/* Primary Sidebar */}
-        {sidebarOpen && renderPrimarySidebar()}
+        {/* Primary Sidebar — resizable */}
+        {sidebarOpen && (
+          <div className="relative flex shrink-0" style={{ width: sidebarWidth }}>
+            <div className="flex-1 min-w-0 overflow-hidden">
+              {renderPrimarySidebar()}
+            </div>
+            {/* Drag handle on right edge */}
+            <div
+              className="absolute right-0 top-0 bottom-0 w-1 z-20 cursor-col-resize
+                         hover:bg-[var(--accent)] transition-colors duration-150"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                const startX = e.clientX;
+                const startW = sidebarWidth;
+                const onMove = (ev: MouseEvent) => {
+                  const next = Math.max(160, Math.min(480, startW + ev.clientX - startX));
+                  setSidebarWidth(next);
+                };
+                const onUp = () => {
+                  window.removeEventListener('mousemove', onMove);
+                  window.removeEventListener('mouseup', onUp);
+                };
+                window.addEventListener('mousemove', onMove);
+                window.addEventListener('mouseup', onUp);
+              }}
+            />
+          </div>
+        )}
 
         {/* Central area */}
-        <div className="flex-1 flex flex-col min-w-0 bg-[#1a1a1a]">
+        <div className="flex-1 flex flex-col min-w-0 bg-[var(--bg-surface)]">
 
           {/* Tab bar */}
-          <div className="h-9 flex items-center bg-[#141414] border-b border-[#2a2a2a] overflow-x-auto shrink-0">
+          <div className="h-8 flex items-center bg-[var(--bg-base)] border-b border-[var(--border-subtle)] overflow-x-auto shrink-0">
             {!sidebarOpen && (
               <button
                 onClick={() => setSidebarOpen(true)}
-                className="h-full px-2 text-[#505050] hover:text-[#a3a3a3] hover:bg-[#1e1e1e] transition-colors shrink-0"
+                className="h-full px-2 text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors duration-150 shrink-0"
                 title="Mostrar sidebar"
               >
-                <ChevronLeft size={14} className="rotate-180" />
+                <ChevronLeft size={13} className="rotate-180" />
               </button>
             )}
             {openTabs.map(tab => (
@@ -582,10 +619,11 @@ function App() {
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 className={`
-                  flex items-center gap-2 px-4 h-full text-xs cursor-pointer select-none shrink-0 border-r border-[#2a2a2a] transition-colors
+                  flex items-center gap-2 px-3 h-full text-[12px] cursor-pointer select-none shrink-0
+                  border-r border-[var(--border-subtle)] transition-colors duration-150
                   ${activeTab === tab.id
-                    ? 'bg-[#1a1a1a] text-[#e5e5e5] border-t border-t-[#3b82f6]'
-                    : 'text-[#737373] hover:text-[#a3a3a3] hover:bg-[#1e1e1e]'
+                    ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] border-t-2 border-t-[var(--accent)] mt-px'
+                    : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
                   }
                 `}
               >
@@ -593,60 +631,68 @@ function App() {
                 {tab.id !== 'files' && (
                   <button
                     onClick={(e) => { e.stopPropagation(); closeTab(tab.id); }}
-                    className="text-[#505050] hover:text-[#e5e5e5] ml-1 rounded hover:bg-[#333] w-4 h-4 flex items-center justify-center"
+                    className="text-[var(--text-muted)] hover:text-[var(--danger)] rounded w-3.5 h-3.5 flex items-center justify-center transition-colors duration-150"
                   >
                     <X size={10} />
                   </button>
                 )}
               </div>
             ))}
-            {/* Spacer + quick actions */}
             <div className="flex-1" />
-            <div className="flex items-center gap-1 px-2">
+            <div className="flex items-center gap-0.5 px-2">
+              <button
+                onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
+                title={theme === 'dark' ? 'Tema claro' : 'Tema oscuro'}
+                className="h-6 w-6 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors duration-150"
+              >
+                {theme === 'dark' ? <Sun size={13} /> : <Moon size={13} />}
+              </button>
+              <button
+                onClick={() => setShowRightPanel(p => !p)}
+                title={showRightPanel ? 'Cerrar segundo panel' : 'Abrir segundo panel'}
+                className={`h-6 w-6 flex items-center justify-center rounded transition-colors duration-150 ${showRightPanel ? 'text-[var(--accent)] bg-[var(--accent-dim)]' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'}`}
+              >
+                <Columns2 size={13} />
+              </button>
               <button
                 onClick={handleToggleAI}
                 title="Asistente IA"
-                className={`h-7 px-2 text-xs rounded transition-colors ${aiVisible ? 'text-[#3b82f6] bg-[#3b82f6]/10' : 'text-[#505050] hover:text-[#a3a3a3]'}`}
+                className={`h-6 w-6 flex items-center justify-center rounded transition-colors duration-150 ${aiVisible ? 'text-[var(--accent)] bg-[var(--accent-dim)]' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'}`}
               >
-                <Bot size={14} />
+                <Bot size={13} />
               </button>
               <button
                 onClick={handleToggleTerminal}
                 title="Terminal (`)"
-                className={`h-7 px-2 text-xs rounded transition-colors ${terminalVisible ? 'text-[#22c55e] bg-[#22c55e]/10' : 'text-[#505050] hover:text-[#a3a3a3]'}`}
+                className={`h-6 w-6 flex items-center justify-center rounded transition-colors duration-150 ${terminalVisible ? 'text-[var(--success)] bg-[var(--success)]/10' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'}`}
               >
-                <TerminalIcon size={14} />
+                <TerminalIcon size={13} />
               </button>
               <button
                 onClick={() => setSecondarySidebarOpen(p => !p)}
                 title="Panel análisis"
-                className={`h-7 px-2 text-xs rounded transition-colors ${secondarySidebarOpen ? 'text-[#8b5cf6] bg-[#8b5cf6]/10' : 'text-[#505050] hover:text-[#a3a3a3]'}`}
+                className={`h-6 w-6 flex items-center justify-center rounded transition-colors duration-150 ${secondarySidebarOpen ? 'text-[var(--warning)] bg-[var(--warning)]/10' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'}`}
               >
-                <BarChart2 size={14} />
+                <BarChart2 size={13} />
               </button>
-
-              {/* ── ZYMO Intranet connection badge ── */}
               {session && (
-                <div className="flex items-center gap-1">
+                <>
                   <button
                     onClick={() => { setConversionArea(session.user.area ?? ''); setShowQueue(p => !p); }}
                     title="Cola de conversión PDF → MD"
-                    className="h-7 px-2 text-xs rounded transition-colors text-[#505050] hover:text-[#a3a3a3]"
+                    className="h-6 w-6 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors duration-150"
                   >
-                    <FileUp size={14} />
+                    <FileUp size={13} />
                   </button>
                   <button
-                    onClick={async () => {
-                      await logoutFromIntranet();
-                      setSession(null);
-                    }}
-                    title={`Sesión: ${session.user.email} — Click para cerrar sesión`}
-                    className="h-7 px-2 text-xs rounded transition-colors flex items-center gap-1 text-green-500 hover:text-red-400"
+                    onClick={() => setShowLogoutConfirm(true)}
+                    title={`Sesión: ${session.user.email} — Cerrar sesión`}
+                    className="h-6 px-2 flex items-center gap-1.5 rounded text-[var(--success)] hover:text-[var(--danger)] hover:bg-[var(--danger)]/10 transition-colors duration-150 text-[11px]"
                   >
-                    <Wifi size={14} />
-                    <span className="max-w-[80px] truncate hidden sm:inline">{session.user.full_name ?? session.user.email}</span>
+                    <Wifi size={13} />
+                    <span className="max-w-[72px] truncate hidden sm:inline">{session.user.full_name?.split(' ')[0] ?? session.user.email}</span>
                   </button>
-                </div>
+                </>
               )}
             </div>
           </div>
@@ -678,27 +724,30 @@ function App() {
                     clipboard={clipboard}
                     onClipboardChange={setClipboard}
                     onFileOpen={handleFileOpen}
+                    onAddFavorite={handleAddFavorite}
                   />
-                  <div className="w-px bg-[#2a2a2a] shrink-0" />
-                  {aiVisible ? (
-                    <div className="w-96 shrink-0 border-l border-[#2a2a2a]">
-                      <AIChat
-                        projectPath={currentPath}
-                        onClose={() => setAiVisible(false)}
-                        onOpenScaffolder={() => setShowScaffolder(true)}
-                      />
-                    </div>
-                  ) : (
-                    <FilePanel
-                      id="right"
-                      path={rightPath}
-                      onPathChange={handleRightPathChange}
-                      isActive={activePanel === 'right'}
-                      onActivate={() => setActivePanel('right')}
-                      clipboard={clipboard}
-                      onClipboardChange={setClipboard}
-                      onFileOpen={handleFileOpen}
+                  {aiVisible && (
+                    <AIChat
+                      projectPath={currentPath}
+                      onClose={() => setAiVisible(false)}
+                      onOpenScaffolder={() => setShowScaffolder(true)}
                     />
+                  )}
+                  {showRightPanel && !aiVisible && (
+                    <>
+                      <div className="w-px bg-[#2a2a2a] shrink-0" />
+                      <FilePanel
+                        id="right"
+                        path={rightPath}
+                        onPathChange={handleRightPathChange}
+                        isActive={activePanel === 'right'}
+                        onActivate={() => setActivePanel('right')}
+                        clipboard={clipboard}
+                        onClipboardChange={setClipboard}
+                        onFileOpen={handleFileOpen}
+                        onAddFavorite={handleAddFavorite}
+                      />
+                    </>
                   )}
                 </div>
               )}
@@ -821,6 +870,36 @@ function App() {
             }
           }}
         />
+      )}
+
+      {/* ── Logout confirmation ── */}
+      {showLogoutConfirm && (
+        <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-lg shadow-2xl w-80 p-6 flex flex-col gap-5">
+            <div>
+              <p className="text-[var(--text-primary)] font-semibold text-sm mb-1">Cerrar sesión</p>
+              <p className="text-[var(--text-muted)] text-xs">¿Seguro que deseas cerrar la sesión de la intranet?</p>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setShowLogoutConfirm(false)}
+                className="px-4 py-1.5 text-xs rounded border border-[var(--border-subtle)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition-colors duration-150"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={async () => {
+                  setShowLogoutConfirm(false);
+                  await logoutFromIntranet();
+                  setSession(null);
+                }}
+                className="px-4 py-1.5 text-xs rounded bg-[var(--danger)] hover:bg-[var(--danger)]/80 text-white font-medium transition-colors duration-150"
+              >
+                Cerrar sesión
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

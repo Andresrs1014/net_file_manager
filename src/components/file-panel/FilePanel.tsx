@@ -3,6 +3,7 @@ import { FileItem } from './FileItem';
 import { PathNavigator } from './PathNavigator';
 import { InputDialog } from '../common/InputDialog';
 import { fileService } from '../../services/fileService';
+import { FolderPlus, FilePlus, FolderOpen } from 'lucide-react';
 import type { FileEntry, ClipboardContent } from '../../types';
 
 interface FilePanelProps {
@@ -14,6 +15,7 @@ interface FilePanelProps {
   clipboard: ClipboardContent | null;
   onClipboardChange: (clipboard: ClipboardContent | null) => void;
   onFileOpen?: (filePath: string) => void;
+  onAddFavorite?: (path: string) => void;
 }
 
 export function FilePanel({
@@ -25,6 +27,7 @@ export function FilePanel({
   clipboard,
   onClipboardChange,
   onFileOpen,
+  onAddFavorite,
 }: FilePanelProps) {
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -223,45 +226,42 @@ export function FilePanel({
 
   return (
     <div
-      className={`flex-1 flex flex-col min-w-0 transition-all ${
-        isActive 
-          ? 'ring-1 ring-[#3b82f6]/50 shadow-[inset_0_0_20px_rgba(59,130,246,0.03)]' 
-          : ''
+      className={`flex-1 flex flex-col min-w-0 transition-colors duration-200 ${
+        isActive ? 'ring-1 ring-[var(--border-accent)]' : ''
       }`}
       onClick={onActivate}
     >
       {/* Header */}
-      <div className={`h-9 flex items-center px-4 border-b gap-2 transition-colors ${
-        isActive ? 'bg-[#2a2a2a] border-[#505050]' : 'bg-[#262626] border-[#404040]'
+      <div className={`h-8 flex items-center px-3 border-b gap-1 transition-colors duration-200 ${
+        isActive ? 'bg-[var(--bg-raised)] border-[var(--border-accent)]' : 'bg-[var(--bg-surface)] border-[var(--border-subtle)]'
       }`}>
-        <span className={`text-xs font-medium uppercase ${
-          isActive ? 'text-[#e5e5e5]' : 'text-[#a3a3a3]'
+        <span className={`text-[11px] font-semibold tracking-widest uppercase mr-1 ${
+          isActive ? 'text-[var(--text-secondary)]' : 'text-[var(--text-muted)]'
         }`}>
-          Panel {id === 'left' ? 'izquierdo' : 'derecho'}
+          {id === 'left' ? 'izq' : 'der'}
         </span>
-        {isActive && (
-          <span className="ml-2 w-2 h-2 bg-[#3b82f6] rounded-full animate-pulse" />
-        )}
+        {isActive && <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />}
+        <div className="flex-1" />
         <button
-          onClick={() => setShowCreateDialog('folder')}
-          className="px-2 py-0.5 text-xs text-[#a3a3a3] hover:text-[#e5e5e5] hover:bg-[#333] rounded transition-colors"
+          onClick={(e) => { e.stopPropagation(); setShowCreateDialog('folder'); }}
+          className="p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] rounded transition-colors duration-150"
           title="Nueva carpeta"
         >
-          📁+
+          <FolderPlus size={13} />
         </button>
         <button
-          onClick={() => setShowCreateDialog('file')}
-          className="px-2 py-0.5 text-xs text-[#a3a3a3] hover:text-[#e5e5e5] hover:bg-[#333] rounded transition-colors"
+          onClick={(e) => { e.stopPropagation(); setShowCreateDialog('file'); }}
+          className="p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] rounded transition-colors duration-150"
           title="Nuevo archivo"
         >
-          📄+
+          <FilePlus size={13} />
         </button>
         <button
-          onClick={handleOpenFolder}
-          className="px-2 py-0.5 text-xs text-[#a3a3a3] hover:text-[#3b82f6] hover:bg-[#333] rounded transition-colors"
+          onClick={(e) => { e.stopPropagation(); handleOpenFolder(); }}
+          className="p-1 text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--bg-hover)] rounded transition-colors duration-150"
           title="Abrir carpeta"
         >
-          📂
+          <FolderOpen size={13} />
         </button>
       </div>
 
@@ -278,20 +278,17 @@ export function FilePanel({
 
       {/* File list */}
       {loading ? (
-        <div className="flex-1 flex items-center justify-center text-[#737373]">
-          <div className="text-center">
-            <div className="animate-pulse text-2xl mb-2">📂</div>
-            <p className="text-sm">Cargando...</p>
+        <div className="flex-1 flex items-center justify-center text-[var(--text-muted)]">
+          <div className="flex flex-col items-center gap-2">
+            <div className="w-5 h-5 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" />
+            <p className="text-xs">Cargando…</p>
           </div>
         </div>
       ) : (
-        <div className="flex-1 overflow-auto p-1">
+        <div className="flex-1 overflow-auto px-1 py-0.5">
           {entries.length === 0 ? (
-            <div className="flex-1 flex items-center justify-center text-[#737373] h-full">
-              <div className="text-center">
-                <div className="text-4xl mb-2">📂</div>
-                <p className="text-sm">Carpeta vacía</p>
-              </div>
+            <div className="flex-1 flex items-center justify-center text-[var(--text-muted)] h-full">
+              <p className="text-xs">Carpeta vacía</p>
             </div>
           ) : (
             entries.map((entry) => (
@@ -309,6 +306,7 @@ export function FilePanel({
                 onDelete={handleDelete}
                 onRename={() => setRenameTarget(entry)}
                 onShowInFolder={() => handleShowInFolder(entry)}
+                onAddFavorite={onAddFavorite ? () => onAddFavorite(entry.path) : undefined}
               />
             ))
           )}
@@ -316,10 +314,10 @@ export function FilePanel({
       )}
 
       {/* Status bar */}
-      <div className="h-6 bg-[#1a1a1a] flex items-center px-3 text-xs text-[#737373] border-t border-[#333]">
+      <div className="h-5 bg-[var(--bg-base)] flex items-center px-3 text-[11px] text-[var(--text-muted)] border-t border-[var(--border-subtle)]">
         {entries.length} elementos
-        {selectedPaths.size > 0 && ` · ${selectedPaths.size} seleccionado(s)`}
-        {hasClipboard && ` · ${clipboard.action === 'copy' ? '📋 Copiar' : '✂️ Cortar'}`}
+        {selectedPaths.size > 0 && ` · ${selectedPaths.size} sel.`}
+        {hasClipboard && ` · ${clipboard.action === 'copy' ? 'copiar' : 'cortar'}`}
       </div>
 
       {/* Rename dialog */}

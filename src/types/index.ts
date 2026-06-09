@@ -18,25 +18,6 @@ export interface FileStats {
   isDirectory: boolean;
 }
 
-// Tipos para navegación
-export interface NavigationHistory {
-  entries: string[];
-  currentIndex: number;
-}
-
-// Tipos para UI
-export interface ThemeColors {
-  bgPrimary: string;
-  bgSecondary: string;
-  toolbarBg: string;
-  accent: string;
-  textPrimary: string;
-  textSecondary: string;
-  border: string;
-  hover: string;
-  selected: string;
-}
-
 // Tipos para menú contextual
 export interface MenuItem {
   label: string;
@@ -129,22 +110,6 @@ export interface AnalysisPackage {
   proposals: Proposal[];
   zymoCorpus: ZymoCorpusEntry[];
   meta: ProcedureMeta;
-}
-
-// ─── Auth con el servidor ─────────────────────────────────────────────────────
-export interface AuthSession {
-  token: string;
-  username: string;
-  role: UserRole;
-  expiresIn: string;
-}
-
-export interface ServerStatus {
-  reachable: boolean;
-  url: string;
-  version?: string;
-  anthropicConfigured?: boolean;
-  analysisMode?: 'claude' | 'mock';
 }
 
 // Tipos para el API de Electron

@@ -453,14 +453,6 @@ CMD ["./app"]`,
 
 export const TEMPLATE_CATEGORIES = ['Backend', 'Frontend', 'Full Stack', 'Desktop', 'Other'] as const;
 
-export function getTemplatesByCategory(category: string): ProjectTemplate[] {
-  return TEMPLATES.filter(t => t.category === category);
-}
-
-export function getTemplateById(id: string): ProjectTemplate | undefined {
-  return TEMPLATES.find(t => t.id === id);
-}
-
 export function processTemplateFiles(
   template: ProjectTemplate,
   projectName: string,

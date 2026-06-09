@@ -392,7 +392,6 @@ export function AnalyzerPanel({ onClose, filePath, defaultOutputRoot, onAnalysis
 
   // ─── Analysis ────────────────────────────────────────────────────────────────
   const handleAnalyze = async () => {
-    console.log('[NV] handleAnalyze — intranetLoggedIn:', intranetLoggedIn, '| session:', session);
     if (!textContent.trim()) { setAnalysisError('Carga o pega el contenido del procedimiento.'); return; }
     if (!procedureCode.trim()) { setAnalysisError('Ingresa el código del procedimiento.'); return; }
     if (!intranetLoggedIn && !session) { setAnalysisError('Inicia sesión en la intranet o en el servidor local.'); return; }

@@ -3,7 +3,6 @@
  */
 
 import { fastIndexer } from './indexer/fileIndexer';
-import { aiService } from './indexer/aiService';
 import type { FileEntry } from '../types';
 
 export interface SearchResult {
@@ -95,41 +94,11 @@ class SearchService {
     }
   }
 
-  async searchWithAI(query: string, options: SearchOptions = {}): Promise<SearchResult[]> {
-    const fastResults = this.search(query, options);
-    
-    if (aiService.isAvailable()) {
-      try {
-        const interpretation = await aiService.chat([
-          { role: 'system', content: 'You are a file search assistant.' },
-          { role: 'user', content: `Suggest keywords for: "${query}"` },
-        ]);
-        
-        if (interpretation) {
-          const extraResults = this.search(interpretation, options);
-          const allResults = [...fastResults];
-          
-          for (const result of extraResults) {
-            if (!allResults.some(r => r.entry.path === result.entry.path)) {
-              allResults.push({ ...result, source: 'ai' as const });
-            }
-          }
-          
-          return allResults.slice(0, options.maxResults || 50);
-        }
-      } catch {
-        // AI failed, return fast results
-      }
-    }
-    
-    return fastResults;
-  }
 }
 
 export const searchService = new SearchService();
 
 export { fastIndexer } from './indexer/fileIndexer';
-export { aiService } from './indexer/aiService';
 
 export function debounce<T extends (...args: any[]) => void>(
   func: T,

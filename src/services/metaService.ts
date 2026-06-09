@@ -74,13 +74,3 @@ export function quickHash(content: string): string {
   return h.toString(16).padStart(8, '0');
 }
 
-/** Actualiza el estado del procedimiento en su _meta.json. */
-export async function updateStatus(
-  procedureDir: string,
-  estado: ProcedureStatus,
-  extra?: Partial<ProcedureMeta>,
-): Promise<void> {
-  const existing = await readMeta(procedureDir);
-  if (!existing) return;
-  await writeMeta(procedureDir, { ...existing, estado, ...extra });
-}

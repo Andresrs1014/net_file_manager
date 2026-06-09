@@ -44,9 +44,6 @@ const electronAPI = {
     return () => ipcRenderer.removeListener('terminal:stream', handler);
   },
 
-  // AI - Ollama chat (bypasses CORS via main process)
-  chatWithOllama: (model: string, messages: any[]) => ipcRenderer.invoke('ollama:chat', model, messages),
-
   // Code editors detection
   detectEditors: () => ipcRenderer.invoke('editors:detect'),
   openWithEditor: (editorPath: string, filePath: string) => ipcRenderer.invoke('editors:openWith', editorPath, filePath),
@@ -121,6 +118,15 @@ const electronAPI = {
     const handler = (_: unknown, data: Record<string, unknown>) => cb(data);
     ipcRenderer.on('queue:progress', handler);
     return () => ipcRenderer.removeListener('queue:progress', handler);
+  },
+
+  // ─── Window controls ──────────────────────────────────────────────────────
+  windowMinimize: () => ipcRenderer.send('window:minimize'),
+  windowMaximize: () => ipcRenderer.send('window:maximize'),
+  windowClose: () => ipcRenderer.send('window:close'),
+  windowIsMaximized: () => ipcRenderer.invoke('window:isMaximized'),
+  onWindowMaximized: (cb: (maximized: boolean) => void) => {
+    ipcRenderer.on('window:maximized', (_, val) => cb(val));
   },
 };
 
